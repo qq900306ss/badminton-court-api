@@ -330,6 +330,9 @@ func ListOpenSessions(c *gin.Context) {
 	}
 	out := make([]model.SessionSummary, 0, len(sessions))
 	for _, s := range sessions {
+		if service.AutoCloseIfExpired(c.Request.Context(), &s) {
+			continue // 超過結束時間 2 小時 → 自動關團,不列入大廳
+		}
 		out = append(out, toSummary(s))
 	}
 	ok(c, out)
@@ -345,6 +348,7 @@ func ListMySessions(c *gin.Context) {
 	}
 	out := make([]model.SessionSummary, 0, len(sessions))
 	for _, s := range sessions {
+		service.AutoCloseIfExpired(c.Request.Context(), &s) // 過期的標成已結束
 		out = append(out, toSummary(s))
 	}
 	ok(c, out)

@@ -15,6 +15,7 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 	if err != nil {
 		return nil, err
 	}
+	AutoCloseIfExpired(ctx, session) // 超過結束時間 2 小時自動關團
 	players, err := repository.GetSessionPlayers(ctx, sessionID)
 	if err != nil {
 		return nil, err
