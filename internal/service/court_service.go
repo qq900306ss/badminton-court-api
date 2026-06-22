@@ -55,6 +55,21 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 	}, nil
 }
 
+// playerInAnyCourt returns the court_id the player is currently in (playing or
+// queue), or "" if none — a player may only occupy one court at a time.
+func playerInAnyCourt(ctx context.Context, sessionID, playerID string) (string, error) {
+	courts, err := repository.GetCourts(ctx, sessionID)
+	if err != nil {
+		return "", err
+	}
+	for _, c := range courts {
+		if contains(c.Playing, playerID) || contains(c.Queue, playerID) {
+			return c.CourtID, nil
+		}
+	}
+	return "", nil
+}
+
 // validatePlayer ensures the player_id is a real member of this session,
 // so attackers can't inject arbitrary IDs onto courts.
 func validatePlayer(ctx context.Context, sessionID, playerID string) error {
@@ -98,15 +113,15 @@ func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string) error
 	if err := checkQueueOpen(ctx, sessionID); err != nil {
 		return err
 	}
+	if cid, _ := playerInAnyCourt(ctx, sessionID, playerID); cid != "" {
+		return fmt.Errorf("你已經在其他場地了,請先退出")
+	}
 	court, err := repository.GetCourt(ctx, sessionID, courtID)
 	if err != nil {
 		return err
 	}
 	if len(court.Playing) >= 4 {
 		return fmt.Errorf("court is full")
-	}
-	if contains(court.Playing, playerID) || contains(court.Queue, playerID) {
-		return fmt.Errorf("already in this court")
 	}
 	court.Playing = append(court.Playing, playerID)
 	if len(court.Playing) > 0 {
@@ -127,18 +142,15 @@ func JoinQueue(ctx context.Context, sessionID, courtID, playerID string) error {
 	if err := checkQueueOpen(ctx, sessionID); err != nil {
 		return err
 	}
+	if cid, _ := playerInAnyCourt(ctx, sessionID, playerID); cid != "" {
+		return fmt.Errorf("你已經在其他場地了,請先退出")
+	}
 	court, err := repository.GetCourt(ctx, sessionID, courtID)
 	if err != nil {
 		return err
 	}
-	if len(court.Playing) < 4 {
-		return fmt.Errorf("court has space — join playing instead")
-	}
 	if len(court.Queue) >= 4 {
 		return fmt.Errorf("queue is full")
-	}
-	if contains(court.Playing, playerID) || contains(court.Queue, playerID) {
-		return fmt.Errorf("already in this court")
 	}
 	court.Queue = append(court.Queue, playerID)
 	return repository.PutCourt(ctx, *court)
