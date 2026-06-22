@@ -320,7 +320,7 @@ func AdminAddToQueue(ctx context.Context, sessionID, courtID, playerID string) e
 	}
 	clearSlot(court.Playing, playerID) // 若原本在這場場上,先移除
 	court.Queue = append(court.Queue, playerID)
-	fillFromQueue(court) // 有空位就直接補上場,否則留在排隊
+	recomputeStatus(court) // 團主明確要排隊 → 不自動補上場
 	return repository.PutCourt(ctx, *court)
 }
 
@@ -374,6 +374,12 @@ func fillFromQueue(court *model.Court) {
 			court.Queue = court.Queue[1:]
 		}
 	}
+	recomputeStatus(court)
+}
+
+// recomputeStatus updates status + the 開打 clock from the current playing slots
+// (no queue draining — used when we deliberately don't want to auto-fill).
+func recomputeStatus(court *model.Court) {
 	n := playingCount(court.Playing)
 	if n == 0 {
 		court.Status = model.CourtEmpty
