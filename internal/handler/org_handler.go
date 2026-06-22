@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/qq900306ss/badminton-court-api/internal/auth"
 	"github.com/qq900306ss/badminton-court-api/internal/model"
 	"github.com/qq900306ss/badminton-court-api/internal/repository"
 )
@@ -104,6 +105,47 @@ func AdminListSessions(c *gin.Context) {
 		out = append(out, toSummary(s))
 	}
 	ok(c, out)
+}
+
+// POST /api/admin/orgs/:orgId/disabled  { disabled: bool }  — block/unblock a leader's login
+func AdminSetOrgDisabled(c *gin.Context) {
+	var body struct {
+		Disabled bool `json:"disabled"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	org, err := repository.GetOrg(c.Request.Context(), c.Param("orgId"))
+	if err != nil {
+		fail(c, http.StatusNotFound, "org not found")
+		return
+	}
+	if org.Role == model.RoleSuperAdmin {
+		fail(c, http.StatusBadRequest, "不能停用超級管理員")
+		return
+	}
+	org.Disabled = body.Disabled
+	if err := repository.PutOrg(c.Request.Context(), *org); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ok(c, org)
+}
+
+// POST /api/admin/impersonate/:orgId  — superadmin gets a token to act as a leader
+func AdminImpersonate(c *gin.Context) {
+	org, err := repository.GetOrg(c.Request.Context(), c.Param("orgId"))
+	if err != nil {
+		fail(c, http.StatusNotFound, "org not found")
+		return
+	}
+	token, err := auth.GenerateToken(org.OrgID, org.GoogleEmail, string(org.Role))
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ok(c, gin.H{"token": token, "org": org})
 }
 
 // DELETE /api/admin/orgs/:orgId

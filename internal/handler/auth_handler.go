@@ -48,25 +48,28 @@ func GoogleCallback(c *gin.Context) {
 		return
 	}
 
-	// auto-create superadmin for emails in SUPER_ADMIN_EMAILS env
+	// existing account: block if a superadmin has disabled it
+	if org != nil && org.Disabled {
+		fail(c, http.StatusForbidden, "此帳號已被停用,請聯絡管理員")
+		return
+	}
+
+	// open self-serve registration: a new Google email becomes a leader,
+	// unless it's listed in SUPER_ADMIN_EMAILS (then superadmin).
 	if org == nil {
+		role := model.RoleLeader
 		superEmails := os.Getenv("SUPER_ADMIN_EMAILS")
-		isSuperAdmin := false
 		for _, e := range strings.Split(superEmails, ",") {
 			if strings.TrimSpace(e) == userInfo.Email {
-				isSuperAdmin = true
+				role = model.RoleSuperAdmin
 				break
 			}
-		}
-		if !isSuperAdmin {
-			fail(c, http.StatusForbidden, "not authorized — ask admin to add you")
-			return
 		}
 		org = &model.Org{
 			OrgID:       uuid.New().String(),
 			GoogleEmail: userInfo.Email,
 			OrgName:     userInfo.Name,
-			Role:        model.RoleSuperAdmin,
+			Role:        role,
 			CreatedAt:   time.Now().UTC().Format(time.RFC3339),
 		}
 		if err := repository.PutOrg(c.Request.Context(), *org); err != nil {
