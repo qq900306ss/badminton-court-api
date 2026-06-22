@@ -10,7 +10,10 @@ import (
 	"github.com/qq900306ss/badminton-court-api/internal/repository"
 )
 
-var ginLambda *ginadapter.GinLambda
+// V2 adapter: Lambda Function URLs use payload format 2.0 (same as API
+// Gateway HTTP API v2). The v1 adapter reads event.Path, which is empty in
+// v2 events, so every request collapses to "/" — must use NewV2 here.
+var ginLambda *ginadapter.GinLambdaV2
 
 func init() {
 	ctx := context.Background()
@@ -19,7 +22,7 @@ func init() {
 	if err := repository.Init(ctx); err != nil {
 		log.Printf("db init: %v", err)
 	}
-	ginLambda = ginadapter.New(handler.NewRouter())
+	ginLambda = ginadapter.NewV2(handler.NewRouter())
 }
 
 func main() {
