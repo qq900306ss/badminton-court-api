@@ -35,6 +35,7 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 		cv := model.CourtView{
 			CourtID:   c.CourtID,
 			CourtNum:  courtNum(c.CourtID),
+			Name:      c.Name,
 			Status:    c.Status,
 			Playing:   toSlots(c.Playing, playerMap),
 			Queue:     toSlots(c.Queue, playerMap),
@@ -184,6 +185,44 @@ func LeavePlaying(ctx context.Context, sessionID, courtID, playerID string) erro
 	return repository.PutCourt(ctx, *court)
 }
 
+// creditFinishedGame gives everyone currently playing on the court +1 game and
+// their minutes, and writes a GameLog. Shared by EndCourt and DeleteCourt.
+func creditFinishedGame(ctx context.Context, sessionID string, court *model.Court) {
+	if len(court.Playing) == 0 {
+		return
+	}
+	now := time.Now().UTC()
+	minutes := 0
+	if court.StartedAt != "" {
+		if started, perr := time.Parse(time.RFC3339, court.StartedAt); perr == nil {
+			minutes = int(now.Sub(started).Minutes())
+		}
+	}
+	players, _ := repository.GetSessionPlayers(ctx, sessionID)
+	pm := make(map[string]model.SessionPlayer, len(players))
+	for _, p := range players {
+		pm[p.PlayerID] = p
+	}
+	names := make([]string, 0, len(court.Playing))
+	for _, pid := range court.Playing {
+		if p, ok := pm[pid]; ok {
+			p.Games++
+			p.TotalMinutes += minutes
+			_ = repository.PutSessionPlayer(ctx, p)
+			names = append(names, p.DisplayName)
+		}
+	}
+	_ = repository.PutGameLog(ctx, model.GameLog{
+		SessionID:   sessionID,
+		EndedAtID:   now.Format(time.RFC3339) + "#" + uuid.New().String(),
+		CourtNum:    courtNum(court.CourtID),
+		PlayerNames: names,
+		StartedAt:   court.StartedAt,
+		EndedAt:     now.Format(time.RFC3339),
+		Minutes:     minutes,
+	})
+}
+
 // EndCourt rotates: playing → cleared, queue → playing.
 // Everyone who was playing gets credited one game.
 func EndCourt(ctx context.Context, sessionID, courtID string) error {
@@ -192,40 +231,7 @@ func EndCourt(ctx context.Context, sessionID, courtID string) error {
 		return err
 	}
 
-	// credit games + minutes to everyone who just finished, and log the game
-	if len(court.Playing) > 0 {
-		now := time.Now().UTC()
-		minutes := 0
-		if court.StartedAt != "" {
-			if started, perr := time.Parse(time.RFC3339, court.StartedAt); perr == nil {
-				minutes = int(now.Sub(started).Minutes())
-			}
-		}
-
-		players, _ := repository.GetSessionPlayers(ctx, sessionID)
-		pm := make(map[string]model.SessionPlayer, len(players))
-		for _, p := range players {
-			pm[p.PlayerID] = p
-		}
-		names := make([]string, 0, len(court.Playing))
-		for _, pid := range court.Playing {
-			if p, ok := pm[pid]; ok {
-				p.Games++
-				p.TotalMinutes += minutes
-				_ = repository.PutSessionPlayer(ctx, p)
-				names = append(names, p.DisplayName)
-			}
-		}
-		_ = repository.PutGameLog(ctx, model.GameLog{
-			SessionID:   sessionID,
-			EndedAtID:   now.Format(time.RFC3339) + "#" + uuid.New().String(),
-			CourtNum:    courtNum(courtID),
-			PlayerNames: names,
-			StartedAt:   court.StartedAt,
-			EndedAt:     now.Format(time.RFC3339),
-			Minutes:     minutes,
-		})
-	}
+	creditFinishedGame(ctx, sessionID, court)
 
 	court.Playing = court.Queue
 	court.Queue = []string{}
@@ -242,6 +248,27 @@ func EndCourt(ctx context.Context, sessionID, courtID string) error {
 		}
 	}
 	return repository.PutCourt(ctx, *court)
+}
+
+// RenameCourt sets a court's custom name (leader)
+func RenameCourt(ctx context.Context, sessionID, courtID, name string) error {
+	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	if err != nil {
+		return err
+	}
+	court.Name = name
+	return repository.PutCourt(ctx, *court)
+}
+
+// RemoveCourt deletes a court (leader). Players currently playing are credited
+// into the stats (as if the game ended); queued players are simply dropped.
+func RemoveCourt(ctx context.Context, sessionID, courtID string) error {
+	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	if err != nil {
+		return err
+	}
+	creditFinishedGame(ctx, sessionID, court) // 場上的人計入統計
+	return repository.DeleteCourt(ctx, sessionID, courtID)
 }
 
 // KickPlayer removes a player from any state in a court (admin only)

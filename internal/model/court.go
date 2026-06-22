@@ -9,7 +9,8 @@ const (
 
 type Court struct {
 	SessionID string      `dynamodbav:"session_id" json:"session_id"`
-	CourtID   string      `dynamodbav:"court_id" json:"court_id"` // court-1, court-2 ... (no '#': breaks URLs)
+	CourtID   string      `dynamodbav:"court_id" json:"court_id"`             // court-1, court-2 ... (no '#': breaks URLs)
+	Name      string      `dynamodbav:"name,omitempty" json:"name,omitempty"` // 團主自訂場地名稱(可選)
 	Status    CourtStatus `dynamodbav:"status" json:"status"`
 	Playing   []string    `dynamodbav:"playing" json:"playing"` // player_ids, max 4
 	Queue     []string    `dynamodbav:"queue" json:"queue"`     // player_ids, max 4
@@ -27,6 +28,7 @@ type PlayerSlot struct {
 type CourtView struct {
 	CourtID   string       `json:"court_id"`
 	CourtNum  int          `json:"court_num"`
+	Name      string       `json:"name,omitempty"`
 	Status    CourtStatus  `json:"status"`
 	Playing   []PlayerSlot `json:"playing"`
 	Queue     []PlayerSlot `json:"queue"`

@@ -375,10 +375,18 @@ func AddCourt(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	newNum := len(courts) + 1
+	// next number = max existing + 1 (len+1 would collide after a court is removed)
+	maxN := 0
+	for _, ct := range courts {
+		n := 0
+		fmt.Sscanf(ct.CourtID, "court-%d", &n)
+		if n > maxN {
+			maxN = n
+		}
+	}
 	court := model.Court{
 		SessionID: sessionID,
-		CourtID:   fmt.Sprintf("court-%d", newNum),
+		CourtID:   fmt.Sprintf("court-%d", maxN+1),
 		Status:    model.CourtEmpty,
 		Playing:   []string{},
 		Queue:     []string{},
@@ -388,4 +396,33 @@ func AddCourt(c *gin.Context) {
 		return
 	}
 	ok(c, court)
+}
+
+// PUT /api/sessions/:id/courts/:courtId/name  — rename a court (team leader)
+func RenameCourt(c *gin.Context) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if utf8.RuneCountInString(body.Name) > 20 {
+		fail(c, http.StatusBadRequest, "名稱太長")
+		return
+	}
+	if err := service.RenameCourt(c.Request.Context(), c.Param("id"), c.Param("courtId"), body.Name); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"renamed": true})
+}
+
+// DELETE /api/sessions/:id/courts/:courtId  — remove a court (team leader)
+func RemoveCourt(c *gin.Context) {
+	if err := service.RemoveCourt(c.Request.Context(), c.Param("id"), c.Param("courtId")); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"removed": true})
 }
