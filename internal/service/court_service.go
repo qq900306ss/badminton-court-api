@@ -18,10 +18,10 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 	if err != nil {
 		return nil, err
 	}
-	// build name lookup
-	nameMap := make(map[string]string, len(players))
+	// build player lookup (name + level)
+	playerMap := make(map[string]model.SessionPlayer, len(players))
 	for _, p := range players {
-		nameMap[p.PlayerID] = p.DisplayName
+		playerMap[p.PlayerID] = p
 	}
 
 	courts, err := repository.GetCourts(ctx, sessionID)
@@ -35,8 +35,8 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 			CourtID:  c.CourtID,
 			CourtNum: courtNum(c.CourtID),
 			Status:   c.Status,
-			Playing:  toSlots(c.Playing, nameMap),
-			Queue:    toSlots(c.Queue, nameMap),
+			Playing:  toSlots(c.Playing, playerMap),
+			Queue:    toSlots(c.Queue, playerMap),
 		}
 		views = append(views, cv)
 	}
@@ -183,12 +183,14 @@ func AdminAddToPlaying(ctx context.Context, sessionID, courtID, playerID string)
 	return repository.PutCourt(ctx, *court)
 }
 
-func toSlots(ids []string, nameMap map[string]string) []model.PlayerSlot {
+func toSlots(ids []string, playerMap map[string]model.SessionPlayer) []model.PlayerSlot {
 	slots := make([]model.PlayerSlot, 0, len(ids))
 	for _, id := range ids {
+		p := playerMap[id]
 		slots = append(slots, model.PlayerSlot{
 			PlayerID:    id,
-			DisplayName: nameMap[id],
+			DisplayName: p.DisplayName,
+			Level:       p.Level,
 		})
 	}
 	return slots

@@ -93,6 +93,7 @@ func JoinSession(c *gin.Context) {
 	var body struct {
 		Password    string `json:"password" binding:"required"`
 		DisplayName string `json:"display_name" binding:"required"`
+		Level       int    `json:"level"`
 		IsTemp      bool   `json:"is_temp"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -124,10 +125,15 @@ func JoinSession(c *gin.Context) {
 	}
 
 	// new player (temp or roster add)
+	level := body.Level
+	if level < 0 || level > 18 {
+		level = 0
+	}
 	p := model.SessionPlayer{
 		SessionID:   sessionID,
 		PlayerID:    uuid.New().String(),
 		DisplayName: body.DisplayName,
+		Level:       level,
 		IsTemp:      body.IsTemp,
 		JoinedAt:    time.Now().UTC().Format(time.RFC3339),
 	}
@@ -180,6 +186,41 @@ func AddSessionPlayer(c *gin.Context) {
 		return
 	}
 	ok(c, p)
+}
+
+// POST /api/sessions/:id/players/:playerId/level  — leader changes a player's level
+func UpdatePlayerLevel(c *gin.Context) {
+	sessionID := c.Param("id")
+	playerID := c.Param("playerId")
+	var body struct {
+		Level int `json:"level"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.Level < 0 || body.Level > 18 {
+		fail(c, http.StatusBadRequest, "level must be 0-18")
+		return
+	}
+
+	players, err := repository.GetSessionPlayers(c.Request.Context(), sessionID)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, p := range players {
+		if p.PlayerID == playerID {
+			p.Level = body.Level
+			if err := repository.PutSessionPlayer(c.Request.Context(), p); err != nil {
+				fail(c, http.StatusInternalServerError, err.Error())
+				return
+			}
+			ok(c, p)
+			return
+		}
+	}
+	fail(c, http.StatusNotFound, "player not found")
 }
 
 // GET /api/sessions/:id/players

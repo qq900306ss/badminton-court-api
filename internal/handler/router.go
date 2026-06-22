@@ -38,6 +38,7 @@ func NewRouter() *gin.Engine {
 	leader.GET("/my/sessions", ListMySessions)
 	leader.POST("/sessions", CreateSession)
 	leader.POST("/sessions/:id/players", AddSessionPlayer)
+	leader.POST("/sessions/:id/players/:playerId/level", UpdatePlayerLevel)
 	leader.POST("/sessions/:id/close", CloseSession)
 	leader.POST("/sessions/:id/courts", AddCourt)
 	leader.POST("/sessions/:id/courts/:courtId/end", EndCourt)

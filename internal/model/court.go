@@ -20,6 +20,7 @@ type Court struct {
 type PlayerSlot struct {
 	PlayerID    string `json:"player_id"`
 	DisplayName string `json:"display_name"`
+	Level       int    `json:"level"`
 }
 
 type CourtView struct {
