@@ -42,15 +42,42 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 	}
 
 	return &model.SessionView{
-		SessionID: session.SessionID,
-		NumCourts: session.NumCourts,
-		Status:    string(session.Status),
-		Courts:    views,
+		SessionID:   session.SessionID,
+		Title:       session.Title,
+		NumCourts:   session.NumCourts,
+		Status:      string(session.Status),
+		StartAt:     session.StartAt,
+		EndAt:       session.EndAt,
+		QueueOpenAt: session.QueueOpenAt,
+		Courts:      views,
 	}, nil
+}
+
+// checkQueueOpen blocks player self-service (join playing / queue) before the
+// leader's configured queue-open time. Leaders bypass this via admin actions.
+func checkQueueOpen(ctx context.Context, sessionID string) error {
+	session, err := repository.GetSession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if session.QueueOpenAt == "" {
+		return nil // no gate configured
+	}
+	openAt, err := time.Parse(time.RFC3339, session.QueueOpenAt)
+	if err != nil {
+		return nil // unparseable → don't block
+	}
+	if time.Now().Before(openAt) {
+		return fmt.Errorf("排隊尚未開放,請於 %s 後再試", openAt.Local().Format("15:04"))
+	}
+	return nil
 }
 
 // JoinPlaying adds a player directly to playing if there's room (< 4)
 func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string) error {
+	if err := checkQueueOpen(ctx, sessionID); err != nil {
+		return err
+	}
 	court, err := repository.GetCourt(ctx, sessionID, courtID)
 	if err != nil {
 		return err
@@ -73,6 +100,9 @@ func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string) error
 
 // JoinQueue adds a player to the queue if there's room (< 4) and playing is full
 func JoinQueue(ctx context.Context, sessionID, courtID, playerID string) error {
+	if err := checkQueueOpen(ctx, sessionID); err != nil {
+		return err
+	}
 	court, err := repository.GetCourt(ctx, sessionID, courtID)
 	if err != nil {
 		return err

@@ -31,8 +31,25 @@ type CourtView struct {
 }
 
 type SessionView struct {
-	SessionID string      `json:"session_id"`
-	NumCourts int         `json:"num_courts"`
-	Status    string      `json:"status"`
-	Courts    []CourtView `json:"courts"`
+	SessionID   string      `json:"session_id"`
+	Title       string      `json:"title"`
+	NumCourts   int         `json:"num_courts"`
+	Status      string      `json:"status"`
+	StartAt     string      `json:"start_at,omitempty"`
+	EndAt       string      `json:"end_at,omitempty"`
+	QueueOpenAt string      `json:"queue_open_at,omitempty"`
+	Courts      []CourtView `json:"courts"`
+}
+
+// SessionSummary is the lightweight card shown in the player lobby and the
+// leader's "my sessions" list — never includes the password.
+type SessionSummary struct {
+	SessionID   string `json:"session_id"`
+	Title       string `json:"title"`
+	NumCourts   int    `json:"num_courts"`
+	Status      string `json:"status"`
+	StartAt     string `json:"start_at,omitempty"`
+	EndAt       string `json:"end_at,omitempty"`
+	QueueOpenAt string `json:"queue_open_at,omitempty"`
+	OpenedAt    string `json:"opened_at"`
 }

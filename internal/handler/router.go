@@ -17,6 +17,7 @@ func NewRouter() *gin.Engine {
 
 	// public — no auth
 	api.POST("/auth/google", GoogleCallback)
+	api.GET("/sessions/open", ListOpenSessions)
 	api.POST("/sessions/:id/join", JoinSession)
 	api.GET("/sessions/:id", GetSession)
 	api.GET("/sessions/:id/players", GetSessionPlayers)
@@ -34,6 +35,7 @@ func NewRouter() *gin.Engine {
 	leader.GET("/orgs/members", GetOrgMembers)
 	leader.POST("/orgs/members", AddOrgMember)
 	leader.DELETE("/orgs/members/:memberId", DeleteOrgMember)
+	leader.GET("/my/sessions", ListMySessions)
 	leader.POST("/sessions", CreateSession)
 	leader.POST("/sessions/:id/players", AddSessionPlayer)
 	leader.POST("/sessions/:id/close", CloseSession)

@@ -17,9 +17,13 @@ import (
 func CreateSession(c *gin.Context) {
 	orgID, _ := c.Get("org_id")
 	var body struct {
+		Title       string   `json:"title"`
 		Password    string   `json:"password" binding:"required"`
 		NumCourts   int      `json:"num_courts" binding:"required,min=1,max=30"`
 		PlayerNames []string `json:"player_names"`
+		StartAt     string   `json:"start_at"`
+		EndAt       string   `json:"end_at"`
+		QueueOpenAt string   `json:"queue_open_at"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -38,9 +42,13 @@ func CreateSession(c *gin.Context) {
 	session := model.Session{
 		SessionID:    sessionID,
 		OrgID:        orgID.(string),
+		Title:        body.Title,
 		PasswordHash: string(hash),
 		NumCourts:    body.NumCourts,
 		Status:       model.SessionOpen,
+		StartAt:      body.StartAt,
+		EndAt:        body.EndAt,
+		QueueOpenAt:  body.QueueOpenAt,
 		CreatedBy:    orgID.(string),
 		OpenedAt:     now,
 	}
@@ -182,6 +190,48 @@ func GetSessionPlayers(c *gin.Context) {
 		return
 	}
 	ok(c, players)
+}
+
+func toSummary(s model.Session) model.SessionSummary {
+	return model.SessionSummary{
+		SessionID:   s.SessionID,
+		Title:       s.Title,
+		NumCourts:   s.NumCourts,
+		Status:      string(s.Status),
+		StartAt:     s.StartAt,
+		EndAt:       s.EndAt,
+		QueueOpenAt: s.QueueOpenAt,
+		OpenedAt:    s.OpenedAt,
+	}
+}
+
+// GET /api/sessions/open  — public lobby: sessions not yet closed
+func ListOpenSessions(c *gin.Context) {
+	sessions, err := repository.ListOpenSessions(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]model.SessionSummary, 0, len(sessions))
+	for _, s := range sessions {
+		out = append(out, toSummary(s))
+	}
+	ok(c, out)
+}
+
+// GET /api/my/sessions  — leader's own sessions (open + past)
+func ListMySessions(c *gin.Context) {
+	orgID, _ := c.Get("org_id")
+	sessions, err := repository.ListSessionsByOrg(c.Request.Context(), orgID.(string))
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]model.SessionSummary, 0, len(sessions))
+	for _, s := range sessions {
+		out = append(out, toSummary(s))
+	}
+	ok(c, out)
 }
 
 // POST /api/sessions/:id/close  (team leader)

@@ -47,6 +47,47 @@ func UpdateSession(ctx context.Context, s model.Session) error {
 	return PutSession(ctx, s)
 }
 
+// ListOpenSessions returns all sessions that haven't been closed (for the lobby).
+func ListOpenSessions(ctx context.Context) ([]model.Session, error) {
+	out, err := client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        aws.String(TableName("sessions")),
+		FilterExpression: aws.String("#s = :open"),
+		ExpressionAttributeNames: map[string]string{
+			"#s": "status",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":open": &types.AttributeValueMemberS{Value: "open"},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var sessions []model.Session
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &sessions); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
+// ListSessionsByOrg returns every session created by an org (for "my sessions").
+func ListSessionsByOrg(ctx context.Context, orgID string) ([]model.Session, error) {
+	out, err := client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        aws.String(TableName("sessions")),
+		FilterExpression: aws.String("org_id = :oid"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":oid": &types.AttributeValueMemberS{Value: orgID},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var sessions []model.Session
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &sessions); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
 func PutSessionPlayer(ctx context.Context, p model.SessionPlayer) error {
 	item, err := attributevalue.MarshalMap(p)
 	if err != nil {

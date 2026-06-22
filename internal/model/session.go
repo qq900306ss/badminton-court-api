@@ -10,9 +10,13 @@ const (
 type Session struct {
 	SessionID    string        `dynamodbav:"session_id" json:"session_id"`
 	OrgID        string        `dynamodbav:"org_id" json:"org_id"`
+	Title        string        `dynamodbav:"title" json:"title"`
 	PasswordHash string        `dynamodbav:"password_hash" json:"-"`
 	NumCourts    int           `dynamodbav:"num_courts" json:"num_courts"`
 	Status       SessionStatus `dynamodbav:"status" json:"status"`
+	StartAt      string        `dynamodbav:"start_at,omitempty" json:"start_at,omitempty"`         // ISO, play window start
+	EndAt        string        `dynamodbav:"end_at,omitempty" json:"end_at,omitempty"`             // ISO, play window end
+	QueueOpenAt  string        `dynamodbav:"queue_open_at,omitempty" json:"queue_open_at,omitempty"` // ISO, when self-queue unlocks
 	CreatedBy    string        `dynamodbav:"created_by" json:"created_by"`
 	OpenedAt     string        `dynamodbav:"opened_at" json:"opened_at"`
 	ClosedAt     string        `dynamodbav:"closed_at,omitempty" json:"closed_at,omitempty"`
