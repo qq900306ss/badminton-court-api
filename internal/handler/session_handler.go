@@ -72,7 +72,7 @@ func CreateSession(c *gin.Context) {
 	for i := 1; i <= body.NumCourts; i++ {
 		court := model.Court{
 			SessionID: sessionID,
-			CourtID:   fmt.Sprintf("court#%d", i),
+			CourtID:   fmt.Sprintf("court-%d", i),
 			Status:    model.CourtEmpty,
 			Playing:   []string{},
 			Queue:     []string{},
@@ -130,10 +130,24 @@ func JoinSession(c *gin.Context) {
 		return
 	}
 
-	// find or create player
+	level := body.Level
+	if level < 0 || level > 18 {
+		level = 0
+	}
+
+	// claim an existing roster name, or create a new player
 	players, _ := repository.GetSessionPlayers(c.Request.Context(), sessionID)
 	for _, p := range players {
 		if p.DisplayName == body.DisplayName {
+			// the person picking this name claims it + sets their level
+			p.Claimed = true
+			if level > 0 {
+				p.Level = level
+			}
+			if err := repository.PutSessionPlayer(c.Request.Context(), p); err != nil {
+				fail(c, http.StatusInternalServerError, err.Error())
+				return
+			}
 			ok(c, gin.H{"player_id": p.PlayerID, "display_name": p.DisplayName})
 			return
 		}
@@ -143,16 +157,13 @@ func JoinSession(c *gin.Context) {
 		return
 	}
 
-	// new player (temp or roster add)
-	level := body.Level
-	if level < 0 || level > 18 {
-		level = 0
-	}
+	// new player (typed a name not on the list) — present, so claimed
 	p := model.SessionPlayer{
 		SessionID:   sessionID,
 		PlayerID:    uuid.New().String(),
 		DisplayName: body.DisplayName,
 		Level:       level,
+		Claimed:     true,
 		IsTemp:      body.IsTemp,
 		JoinedAt:    time.Now().UTC().Format(time.RFC3339),
 	}
@@ -357,7 +368,7 @@ func AddCourt(c *gin.Context) {
 	newNum := len(courts) + 1
 	court := model.Court{
 		SessionID: sessionID,
-		CourtID:   fmt.Sprintf("court#%d", newNum),
+		CourtID:   fmt.Sprintf("court-%d", newNum),
 		Status:    model.CourtEmpty,
 		Playing:   []string{},
 		Queue:     []string{},

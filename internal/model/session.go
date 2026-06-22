@@ -26,7 +26,8 @@ type SessionPlayer struct {
 	SessionID   string `dynamodbav:"session_id" json:"session_id"`
 	PlayerID    string `dynamodbav:"player_id" json:"player_id"`
 	DisplayName string `dynamodbav:"display_name" json:"display_name"`
-	Level       int    `dynamodbav:"level" json:"level"` // 羽球分級 1-18, 0 = 未填
+	Level       int    `dynamodbav:"level" json:"level"`       // 羽球分級 1-18, 0 = 未填
+	Claimed     bool   `dynamodbav:"claimed" json:"claimed"`   // true once a real person has picked this identity
 	IsTemp      bool   `dynamodbav:"is_temp" json:"is_temp"`
 	JoinedAt    string `dynamodbav:"joined_at" json:"joined_at"`
 }

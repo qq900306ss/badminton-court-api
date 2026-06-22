@@ -238,6 +238,6 @@ func remove(slice []string, val string) []string {
 
 func courtNum(courtID string) int {
 	n := 0
-	fmt.Sscanf(courtID, "court#%d", &n)
+	fmt.Sscanf(courtID, "court-%d", &n)
 	return n
 }

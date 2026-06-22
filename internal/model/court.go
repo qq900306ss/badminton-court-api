@@ -9,7 +9,7 @@ const (
 
 type Court struct {
 	SessionID string      `dynamodbav:"session_id" json:"session_id"`
-	CourtID   string      `dynamodbav:"court_id" json:"court_id"` // court#1, court#2 ...
+	CourtID   string      `dynamodbav:"court_id" json:"court_id"` // court-1, court-2 ... (no '#': breaks URLs)
 	Status    CourtStatus `dynamodbav:"status" json:"status"`
 	Playing   []string    `dynamodbav:"playing" json:"playing"`   // player_ids, max 4
 	Queue     []string    `dynamodbav:"queue" json:"queue"`       // player_ids, max 4
