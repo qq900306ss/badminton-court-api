@@ -1,0 +1,190 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/qq900306ss/badminton-court-api/internal/model"
+	"github.com/qq900306ss/badminton-court-api/internal/repository"
+)
+
+func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, error) {
+	session, err := repository.GetSession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	players, err := repository.GetSessionPlayers(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	// build name lookup
+	nameMap := make(map[string]string, len(players))
+	for _, p := range players {
+		nameMap[p.PlayerID] = p.DisplayName
+	}
+
+	courts, err := repository.GetCourts(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	views := make([]model.CourtView, 0, len(courts))
+	for _, c := range courts {
+		cv := model.CourtView{
+			CourtID:  c.CourtID,
+			CourtNum: courtNum(c.CourtID),
+			Status:   c.Status,
+			Playing:  toSlots(c.Playing, nameMap),
+			Queue:    toSlots(c.Queue, nameMap),
+		}
+		views = append(views, cv)
+	}
+
+	return &model.SessionView{
+		SessionID: session.SessionID,
+		NumCourts: session.NumCourts,
+		Status:    string(session.Status),
+		Courts:    views,
+	}, nil
+}
+
+// JoinPlaying adds a player directly to playing if there's room (< 4)
+func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string) error {
+	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	if err != nil {
+		return err
+	}
+	if len(court.Playing) >= 4 {
+		return fmt.Errorf("court is full")
+	}
+	if contains(court.Playing, playerID) || contains(court.Queue, playerID) {
+		return fmt.Errorf("already in this court")
+	}
+	court.Playing = append(court.Playing, playerID)
+	if len(court.Playing) > 0 {
+		court.Status = model.CourtPlaying
+	}
+	if court.StartedAt == "" {
+		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	return repository.PutCourt(ctx, *court)
+}
+
+// JoinQueue adds a player to the queue if there's room (< 4) and playing is full
+func JoinQueue(ctx context.Context, sessionID, courtID, playerID string) error {
+	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	if err != nil {
+		return err
+	}
+	if len(court.Playing) < 4 {
+		return fmt.Errorf("court has space — join playing instead")
+	}
+	if len(court.Queue) >= 4 {
+		return fmt.Errorf("queue is full")
+	}
+	if contains(court.Playing, playerID) || contains(court.Queue, playerID) {
+		return fmt.Errorf("already in this court")
+	}
+	court.Queue = append(court.Queue, playerID)
+	return repository.PutCourt(ctx, *court)
+}
+
+// LeaveQueue removes a player from queue (players can only leave queue, not playing)
+func LeaveQueue(ctx context.Context, sessionID, courtID, playerID string) error {
+	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	if err != nil {
+		return err
+	}
+	court.Queue = remove(court.Queue, playerID)
+	return repository.PutCourt(ctx, *court)
+}
+
+// EndCourt rotates: playing → cleared, queue → playing
+func EndCourt(ctx context.Context, sessionID, courtID string) error {
+	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	if err != nil {
+		return err
+	}
+	court.Playing = court.Queue
+	court.Queue = []string{}
+	if len(court.Playing) == 0 {
+		court.Status = model.CourtEmpty
+		court.StartedAt = ""
+	} else {
+		court.Status = model.CourtPlaying
+		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	return repository.PutCourt(ctx, *court)
+}
+
+// KickPlayer removes a player from any state in a court (admin only)
+func KickPlayer(ctx context.Context, sessionID, courtID, playerID string) error {
+	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	if err != nil {
+		return err
+	}
+	court.Playing = remove(court.Playing, playerID)
+	court.Queue = remove(court.Queue, playerID)
+	if len(court.Playing) == 0 {
+		court.Status = model.CourtEmpty
+		court.StartedAt = ""
+	}
+	return repository.PutCourt(ctx, *court)
+}
+
+// AdminAddToPlaying force-adds a player to playing (admin only), bypassing queue
+func AdminAddToPlaying(ctx context.Context, sessionID, courtID, playerID string) error {
+	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	if err != nil {
+		return err
+	}
+	if len(court.Playing) >= 4 {
+		return fmt.Errorf("court playing is full")
+	}
+	court.Queue = remove(court.Queue, playerID)
+	if !contains(court.Playing, playerID) {
+		court.Playing = append(court.Playing, playerID)
+	}
+	court.Status = model.CourtPlaying
+	if court.StartedAt == "" {
+		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	return repository.PutCourt(ctx, *court)
+}
+
+func toSlots(ids []string, nameMap map[string]string) []model.PlayerSlot {
+	slots := make([]model.PlayerSlot, 0, len(ids))
+	for _, id := range ids {
+		slots = append(slots, model.PlayerSlot{
+			PlayerID:    id,
+			DisplayName: nameMap[id],
+		})
+	}
+	return slots
+}
+
+func contains(slice []string, val string) bool {
+	for _, s := range slice {
+		if s == val {
+			return true
+		}
+	}
+	return false
+}
+
+func remove(slice []string, val string) []string {
+	result := slice[:0]
+	for _, s := range slice {
+		if s != val {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+func courtNum(courtID string) int {
+	n := 0
+	fmt.Sscanf(courtID, "court#%d", &n)
+	return n
+}
