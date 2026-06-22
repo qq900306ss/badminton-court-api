@@ -7,15 +7,19 @@ import (
 	"github.com/qq900306ss/badminton-court-api/internal/service"
 )
 
-// POST /api/sessions/:id/courts/:courtId/join-playing
+// POST /api/sessions/:id/courts/:courtId/join-playing  { position: 0-3 }
 func JoinPlaying(c *gin.Context) {
 	playerID := c.GetHeader("X-Player-ID")
 	if playerID == "" {
 		fail(c, http.StatusBadRequest, "missing X-Player-ID header")
 		return
 	}
+	var body struct {
+		Position int `json:"position"`
+	}
+	_ = c.ShouldBindJSON(&body) // default 0 if absent
 	if err := service.JoinPlaying(c.Request.Context(),
-		c.Param("id"), c.Param("courtId"), playerID); err != nil {
+		c.Param("id"), c.Param("courtId"), playerID, body.Position); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}

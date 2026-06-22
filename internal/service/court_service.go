@@ -38,7 +38,7 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 			CourtNum:  courtNum(c.CourtID),
 			Name:      c.Name,
 			Status:    c.Status,
-			Playing:   toSlots(c.Playing, playerMap),
+			Playing:   toPlayingSlots(c.Playing, playerMap),
 			Queue:     toSlots(c.Queue, playerMap),
 			StartedAt: c.StartedAt,
 		}
@@ -107,8 +107,11 @@ func checkQueueOpen(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-// JoinPlaying adds a player directly to playing if there's room (< 4)
-func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string) error {
+// JoinPlaying seats a player at a specific position (0=左上,1=右上,2=左下,3=右下)
+func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string, position int) error {
+	if position < 0 || position > 3 {
+		return fmt.Errorf("invalid position")
+	}
 	if err := validatePlayer(ctx, sessionID, playerID); err != nil {
 		return err
 	}
@@ -122,15 +125,14 @@ func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string) error
 	if err != nil {
 		return err
 	}
-	if len(court.Playing) >= 4 {
-		return fmt.Errorf("court is full")
+	court.Playing = normPlaying(court.Playing)
+	if court.Playing[position] != "" {
+		return fmt.Errorf("這個位置已經有人了")
 	}
-	court.Playing = append(court.Playing, playerID)
-	if len(court.Playing) > 0 {
-		court.Status = model.CourtPlaying
-	}
+	court.Playing[position] = playerID
+	court.Status = model.CourtPlaying
 	// 開打計時只在「湊滿 4 人」那一刻才起算;1~3 人是湊人中,不計時
-	if len(court.Playing) == 4 {
+	if playingCount(court.Playing) == 4 {
 		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 	return repository.PutCourt(ctx, *court)
@@ -175,11 +177,12 @@ func LeavePlaying(ctx context.Context, sessionID, courtID, playerID string) erro
 	if err != nil {
 		return err
 	}
-	if len(court.Playing) >= 4 {
+	court.Playing = normPlaying(court.Playing)
+	if playingCount(court.Playing) >= 4 {
 		return fmt.Errorf("比賽已開始,請找團主")
 	}
-	court.Playing = remove(court.Playing, playerID)
-	if len(court.Playing) == 0 {
+	clearSlot(court.Playing, playerID)
+	if playingCount(court.Playing) == 0 {
 		court.Status = model.CourtEmpty
 		court.StartedAt = ""
 	}
@@ -189,7 +192,7 @@ func LeavePlaying(ctx context.Context, sessionID, courtID, playerID string) erro
 // creditFinishedGame gives everyone currently playing on the court +1 game and
 // their minutes, and writes a GameLog. Shared by EndCourt and DeleteCourt.
 func creditFinishedGame(ctx context.Context, sessionID string, court *model.Court) {
-	if len(court.Playing) == 0 {
+	if playingCount(court.Playing) == 0 {
 		return
 	}
 	now := time.Now().UTC()
@@ -234,15 +237,22 @@ func EndCourt(ctx context.Context, sessionID, courtID string) error {
 
 	creditFinishedGame(ctx, sessionID, court)
 
-	court.Playing = court.Queue
+	// promote the queue into court positions in order
+	next := make([]string, 4)
+	for i, pid := range court.Queue {
+		if i < 4 {
+			next[i] = pid
+		}
+	}
+	court.Playing = next
 	court.Queue = []string{}
-	if len(court.Playing) == 0 {
+	if playingCount(court.Playing) == 0 {
 		court.Status = model.CourtEmpty
 		court.StartedAt = ""
 	} else {
 		court.Status = model.CourtPlaying
 		// only start the clock if the next group is already full
-		if len(court.Playing) == 4 {
+		if playingCount(court.Playing) == 4 {
 			court.StartedAt = time.Now().UTC().Format(time.RFC3339)
 		} else {
 			court.StartedAt = ""
@@ -278,38 +288,67 @@ func KickPlayer(ctx context.Context, sessionID, courtID, playerID string) error 
 	if err != nil {
 		return err
 	}
-	court.Playing = remove(court.Playing, playerID)
+	court.Playing = normPlaying(court.Playing)
+	clearSlot(court.Playing, playerID)
 	court.Queue = remove(court.Queue, playerID)
-	if len(court.Playing) == 0 {
+	if playingCount(court.Playing) == 0 {
 		court.Status = model.CourtEmpty
 		court.StartedAt = ""
 	}
 	return repository.PutCourt(ctx, *court)
 }
 
-// AdminAddToPlaying force-adds a player to playing (admin only), bypassing queue
+// AdminAddToPlaying force-adds a player to the first empty slot (admin, bypasses queue)
 func AdminAddToPlaying(ctx context.Context, sessionID, courtID, playerID string) error {
 	court, err := repository.GetCourt(ctx, sessionID, courtID)
 	if err != nil {
 		return err
 	}
-	if len(court.Playing) >= 4 {
+	court.Playing = normPlaying(court.Playing)
+	if playingCount(court.Playing) >= 4 {
 		return fmt.Errorf("court playing is full")
 	}
 	court.Queue = remove(court.Queue, playerID)
 	if !contains(court.Playing, playerID) {
-		court.Playing = append(court.Playing, playerID)
+		for i := range court.Playing {
+			if court.Playing[i] == "" {
+				court.Playing[i] = playerID
+				break
+			}
+		}
 	}
 	court.Status = model.CourtPlaying
-	if len(court.Playing) == 4 {
+	if playingCount(court.Playing) == 4 {
 		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 	return repository.PutCourt(ctx, *court)
 }
 
+// toPlayingSlots returns a length-4 positional slice (empty slot → blank PlayerSlot)
+func toPlayingSlots(playing []string, playerMap map[string]model.SessionPlayer) []model.PlayerSlot {
+	p := normPlaying(playing)
+	slots := make([]model.PlayerSlot, 4)
+	for i, id := range p {
+		if id == "" {
+			continue // blank slot
+		}
+		pl := playerMap[id]
+		slots[i] = model.PlayerSlot{
+			PlayerID:    id,
+			DisplayName: pl.DisplayName,
+			Level:       pl.Level,
+			Games:       pl.Games,
+		}
+	}
+	return slots
+}
+
 func toSlots(ids []string, playerMap map[string]model.SessionPlayer) []model.PlayerSlot {
 	slots := make([]model.PlayerSlot, 0, len(ids))
 	for _, id := range ids {
+		if id == "" {
+			continue
+		}
 		p := playerMap[id]
 		slots = append(slots, model.PlayerSlot{
 			PlayerID:    id,
@@ -321,9 +360,36 @@ func toSlots(ids []string, playerMap map[string]model.SessionPlayer) []model.Pla
 	return slots
 }
 
+// normPlaying returns a length-4 positional slice ("" = empty slot)
+func normPlaying(p []string) []string {
+	out := make([]string, 4)
+	for i := 0; i < 4 && i < len(p); i++ {
+		out[i] = p[i]
+	}
+	return out
+}
+
+func playingCount(p []string) int {
+	n := 0
+	for _, s := range p {
+		if s != "" {
+			n++
+		}
+	}
+	return n
+}
+
+func clearSlot(p []string, val string) {
+	for i := range p {
+		if p[i] == val {
+			p[i] = ""
+		}
+	}
+}
+
 func contains(slice []string, val string) bool {
 	for _, s := range slice {
-		if s == val {
+		if s == val && val != "" {
 			return true
 		}
 	}
@@ -331,7 +397,7 @@ func contains(slice []string, val string) bool {
 }
 
 func remove(slice []string, val string) []string {
-	result := slice[:0]
+	result := make([]string, 0, len(slice))
 	for _, s := range slice {
 		if s != val {
 			result = append(result, s)

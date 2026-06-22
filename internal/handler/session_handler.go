@@ -392,7 +392,7 @@ func AddCourt(c *gin.Context) {
 		SessionID: sessionID,
 		CourtID:   fmt.Sprintf("court-%d", maxN+1),
 		Status:    model.CourtEmpty,
-		Playing:   []string{},
+		Playing:   make([]string, 4),
 		Queue:     []string{},
 	}
 	if err := repository.PutCourt(c.Request.Context(), court); err != nil {
