@@ -279,6 +279,27 @@ func KickPlayer(ctx context.Context, sessionID, courtID, playerID string) error 
 	return repository.PutCourt(ctx, *court)
 }
 
+// removeFromOtherCourts pulls a player out of every court except keepCourtID
+// (and backfills those courts from their own queue), enforcing one court per player.
+func removeFromOtherCourts(ctx context.Context, sessionID, playerID, keepCourtID string) {
+	courts, err := repository.GetCourts(ctx, sessionID)
+	if err != nil {
+		return
+	}
+	for _, c := range courts {
+		if c.CourtID == keepCourtID {
+			continue
+		}
+		if contains(c.Playing, playerID) || contains(c.Queue, playerID) {
+			c.Playing = normPlaying(c.Playing)
+			clearSlot(c.Playing, playerID)
+			c.Queue = remove(c.Queue, playerID)
+			fillFromQueue(&c)
+			_ = repository.PutCourt(ctx, c)
+		}
+	}
+}
+
 // AdminAddToPlaying force-adds a player to the first empty slot (admin, bypasses queue)
 func AdminAddToPlaying(ctx context.Context, sessionID, courtID, playerID string) error {
 	court, err := repository.GetCourt(ctx, sessionID, courtID)
@@ -289,6 +310,7 @@ func AdminAddToPlaying(ctx context.Context, sessionID, courtID, playerID string)
 	if playingCount(court.Playing) >= 4 {
 		return fmt.Errorf("court playing is full")
 	}
+	removeFromOtherCourts(ctx, sessionID, playerID, courtID)
 	court.Queue = remove(court.Queue, playerID)
 	if !contains(court.Playing, playerID) {
 		for i := range court.Playing {
@@ -318,6 +340,7 @@ func AdminAddToQueue(ctx context.Context, sessionID, courtID, playerID string) e
 	if contains(court.Queue, playerID) {
 		return nil // already queued here
 	}
+	removeFromOtherCourts(ctx, sessionID, playerID, courtID)
 	clearSlot(court.Playing, playerID) // 若原本在這場場上,先移除
 	court.Queue = append(court.Queue, playerID)
 	recomputeStatus(court) // 團主明確要排隊 → 不自動補上場
