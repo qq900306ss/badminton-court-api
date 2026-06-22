@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/qq900306ss/badminton-court-api/internal/model"
 	"github.com/qq900306ss/badminton-court-api/internal/repository"
 )
@@ -32,11 +33,12 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 	views := make([]model.CourtView, 0, len(courts))
 	for _, c := range courts {
 		cv := model.CourtView{
-			CourtID:  c.CourtID,
-			CourtNum: courtNum(c.CourtID),
-			Status:   c.Status,
-			Playing:  toSlots(c.Playing, playerMap),
-			Queue:    toSlots(c.Queue, playerMap),
+			CourtID:   c.CourtID,
+			CourtNum:  courtNum(c.CourtID),
+			Status:    c.Status,
+			Playing:   toSlots(c.Playing, playerMap),
+			Queue:     toSlots(c.Queue, playerMap),
+			StartedAt: c.StartedAt,
 		}
 		views = append(views, cv)
 	}
@@ -110,7 +112,8 @@ func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string) error
 	if len(court.Playing) > 0 {
 		court.Status = model.CourtPlaying
 	}
-	if court.StartedAt == "" {
+	// "開打" time = the moment it fills to 4 (fallback: first person in)
+	if len(court.Playing) == 4 || court.StartedAt == "" {
 		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 	return repository.PutCourt(ctx, *court)
@@ -151,12 +154,49 @@ func LeaveQueue(ctx context.Context, sessionID, courtID, playerID string) error 
 	return repository.PutCourt(ctx, *court)
 }
 
-// EndCourt rotates: playing → cleared, queue → playing
+// EndCourt rotates: playing → cleared, queue → playing.
+// Everyone who was playing gets credited one game.
 func EndCourt(ctx context.Context, sessionID, courtID string) error {
 	court, err := repository.GetCourt(ctx, sessionID, courtID)
 	if err != nil {
 		return err
 	}
+
+	// credit games + minutes to everyone who just finished, and log the game
+	if len(court.Playing) > 0 {
+		now := time.Now().UTC()
+		minutes := 0
+		if court.StartedAt != "" {
+			if started, perr := time.Parse(time.RFC3339, court.StartedAt); perr == nil {
+				minutes = int(now.Sub(started).Minutes())
+			}
+		}
+
+		players, _ := repository.GetSessionPlayers(ctx, sessionID)
+		pm := make(map[string]model.SessionPlayer, len(players))
+		for _, p := range players {
+			pm[p.PlayerID] = p
+		}
+		names := make([]string, 0, len(court.Playing))
+		for _, pid := range court.Playing {
+			if p, ok := pm[pid]; ok {
+				p.Games++
+				p.TotalMinutes += minutes
+				_ = repository.PutSessionPlayer(ctx, p)
+				names = append(names, p.DisplayName)
+			}
+		}
+		_ = repository.PutGameLog(ctx, model.GameLog{
+			SessionID:   sessionID,
+			EndedAtID:   now.Format(time.RFC3339) + "#" + uuid.New().String(),
+			CourtNum:    courtNum(courtID),
+			PlayerNames: names,
+			StartedAt:   court.StartedAt,
+			EndedAt:     now.Format(time.RFC3339),
+			Minutes:     minutes,
+		})
+	}
+
 	court.Playing = court.Queue
 	court.Queue = []string{}
 	if len(court.Playing) == 0 {
@@ -198,7 +238,7 @@ func AdminAddToPlaying(ctx context.Context, sessionID, courtID, playerID string)
 		court.Playing = append(court.Playing, playerID)
 	}
 	court.Status = model.CourtPlaying
-	if court.StartedAt == "" {
+	if len(court.Playing) == 4 || court.StartedAt == "" {
 		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 	return repository.PutCourt(ctx, *court)
@@ -212,6 +252,7 @@ func toSlots(ids []string, playerMap map[string]model.SessionPlayer) []model.Pla
 			PlayerID:    id,
 			DisplayName: p.DisplayName,
 			Level:       p.Level,
+			Games:       p.Games,
 		})
 	}
 	return slots

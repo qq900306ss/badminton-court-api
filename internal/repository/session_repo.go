@@ -133,6 +133,37 @@ func GetSessionPlayers(ctx context.Context, sessionID string) ([]model.SessionPl
 	return players, nil
 }
 
+func PutGameLog(ctx context.Context, g model.GameLog) error {
+	item, err := attributevalue.MarshalMap(g)
+	if err != nil {
+		return err
+	}
+	_, err = client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(TableName("game-logs")),
+		Item:      item,
+	})
+	return err
+}
+
+func ListGameLogs(ctx context.Context, sessionID string) ([]model.GameLog, error) {
+	out, err := client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(TableName("game-logs")),
+		KeyConditionExpression: aws.String("session_id = :sid"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":sid": &types.AttributeValueMemberS{Value: sessionID},
+		},
+		ScanIndexForward: aws.Bool(false), // newest first
+	})
+	if err != nil {
+		return nil, err
+	}
+	var logs []model.GameLog
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &logs); err != nil {
+		return nil, err
+	}
+	return logs, nil
+}
+
 func DeleteSessionPlayer(ctx context.Context, sessionID, playerID string) error {
 	_, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 		TableName: aws.String(TableName("session-players")),

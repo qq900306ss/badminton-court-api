@@ -287,6 +287,16 @@ func UpdatePlayerLevel(c *gin.Context) {
 	fail(c, http.StatusNotFound, "player not found")
 }
 
+// GET /api/sessions/:id/games  — leader: history of finished games
+func ListGames(c *gin.Context) {
+	logs, err := repository.ListGameLogs(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ok(c, logs)
+}
+
 // GET /api/sessions/:id/players
 func GetSessionPlayers(c *gin.Context) {
 	players, err := repository.GetSessionPlayers(c.Request.Context(), c.Param("id"))

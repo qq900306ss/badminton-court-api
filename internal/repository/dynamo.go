@@ -58,6 +58,7 @@ func ensureTables(ctx context.Context) {
 		{"session-players", "session_id", "player_id"},
 		{"courts", "session_id", "court_id"},
 		{"session-history", "org_id", "closed_at_session"},
+		{"game-logs", "session_id", "ended_at_id"},
 	}
 
 	for _, t := range tables {

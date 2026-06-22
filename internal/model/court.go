@@ -11,8 +11,8 @@ type Court struct {
 	SessionID string      `dynamodbav:"session_id" json:"session_id"`
 	CourtID   string      `dynamodbav:"court_id" json:"court_id"` // court-1, court-2 ... (no '#': breaks URLs)
 	Status    CourtStatus `dynamodbav:"status" json:"status"`
-	Playing   []string    `dynamodbav:"playing" json:"playing"`   // player_ids, max 4
-	Queue     []string    `dynamodbav:"queue" json:"queue"`       // player_ids, max 4
+	Playing   []string    `dynamodbav:"playing" json:"playing"` // player_ids, max 4
+	Queue     []string    `dynamodbav:"queue" json:"queue"`     // player_ids, max 4
 	StartedAt string      `dynamodbav:"started_at,omitempty" json:"started_at,omitempty"`
 }
 
@@ -21,14 +21,16 @@ type PlayerSlot struct {
 	PlayerID    string `json:"player_id"`
 	DisplayName string `json:"display_name"`
 	Level       int    `json:"level"`
+	Games       int    `json:"games"`
 }
 
 type CourtView struct {
-	CourtID  string       `json:"court_id"`
-	CourtNum int          `json:"court_num"`
-	Status   CourtStatus  `json:"status"`
-	Playing  []PlayerSlot `json:"playing"`
-	Queue    []PlayerSlot `json:"queue"`
+	CourtID   string       `json:"court_id"`
+	CourtNum  int          `json:"court_num"`
+	Status    CourtStatus  `json:"status"`
+	Playing   []PlayerSlot `json:"playing"`
+	Queue     []PlayerSlot `json:"queue"`
+	StartedAt string       `json:"started_at,omitempty"` // 湊滿開打的時間
 }
 
 type SessionView struct {
