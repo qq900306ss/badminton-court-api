@@ -20,6 +20,7 @@ func NewRouter() *gin.Engine {
 	// public — no auth
 	api.POST("/auth/google", GoogleCallback)
 	api.GET("/sessions/open", ListOpenSessions)
+	api.POST("/sessions/:id/verify-password", VerifyPassword)
 	api.POST("/sessions/:id/join", JoinSession)
 	api.GET("/sessions/:id", GetSession)
 	api.GET("/sessions/:id/players", GetSessionPlayers)

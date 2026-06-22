@@ -163,6 +163,32 @@ func JoinSession(c *gin.Context) {
 	ok(c, gin.H{"player_id": p.PlayerID, "display_name": p.DisplayName})
 }
 
+// POST /api/sessions/:id/verify-password  — public, check password up front
+func VerifyPassword(c *gin.Context) {
+	sessionID := c.Param("id")
+	var body struct {
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, "missing password")
+		return
+	}
+	session, err := repository.GetSession(c.Request.Context(), sessionID)
+	if err != nil {
+		fail(c, http.StatusNotFound, "session not found")
+		return
+	}
+	if session.Status != model.SessionOpen {
+		fail(c, http.StatusGone, "session is closed")
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(session.PasswordHash), []byte(body.Password)); err != nil {
+		fail(c, http.StatusUnauthorized, "wrong password")
+		return
+	}
+	ok(c, gin.H{"ok": true, "title": session.Title})
+}
+
 // GET /api/sessions/:id  — full court view (polls every 3s)
 func GetSession(c *gin.Context) {
 	view, err := service.GetSessionView(c.Request.Context(), c.Param("id"))
