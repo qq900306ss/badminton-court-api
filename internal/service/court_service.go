@@ -118,7 +118,8 @@ func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string, posit
 	if err := checkQueueOpen(ctx, sessionID); err != nil {
 		return err
 	}
-	if cid, _ := playerInAnyCourt(ctx, sessionID, playerID); cid != "" {
+	// already in another court? block. already in THIS court? this is a move.
+	if cid, _ := playerInAnyCourt(ctx, sessionID, playerID); cid != "" && cid != courtID {
 		return fmt.Errorf("你已經在其他場地了,請先退出")
 	}
 	court, err := repository.GetCourt(ctx, sessionID, courtID)
@@ -129,6 +130,9 @@ func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string, posit
 	if court.Playing[position] != "" {
 		return fmt.Errorf("這個位置已經有人了")
 	}
+	// leave any current spot in this court (moving position / promoting from queue)
+	clearSlot(court.Playing, playerID)
+	court.Queue = remove(court.Queue, playerID)
 	court.Playing[position] = playerID
 	court.Status = model.CourtPlaying
 	// 開打計時只在「湊滿 4 人」那一刻才起算;1~3 人是湊人中,不計時
@@ -157,6 +161,7 @@ func JoinQueue(ctx context.Context, sessionID, courtID, playerID string) error {
 		return fmt.Errorf("queue is full")
 	}
 	court.Queue = append(court.Queue, playerID)
+	fillFromQueue(court) // 若場上還有空位就直接遞補上場
 	return repository.PutCourt(ctx, *court)
 }
 
@@ -182,10 +187,7 @@ func LeavePlaying(ctx context.Context, sessionID, courtID, playerID string) erro
 		return fmt.Errorf("比賽已開始,請找團主")
 	}
 	clearSlot(court.Playing, playerID)
-	if playingCount(court.Playing) == 0 {
-		court.Status = model.CourtEmpty
-		court.StartedAt = ""
-	}
+	fillFromQueue(court) // 走了之後若有人排隊就遞補
 	return repository.PutCourt(ctx, *court)
 }
 
@@ -237,27 +239,9 @@ func EndCourt(ctx context.Context, sessionID, courtID string) error {
 
 	creditFinishedGame(ctx, sessionID, court)
 
-	// promote the queue into court positions in order
-	next := make([]string, 4)
-	for i, pid := range court.Queue {
-		if i < 4 {
-			next[i] = pid
-		}
-	}
-	court.Playing = next
-	court.Queue = []string{}
-	if playingCount(court.Playing) == 0 {
-		court.Status = model.CourtEmpty
-		court.StartedAt = ""
-	} else {
-		court.Status = model.CourtPlaying
-		// only start the clock if the next group is already full
-		if playingCount(court.Playing) == 4 {
-			court.StartedAt = time.Now().UTC().Format(time.RFC3339)
-		} else {
-			court.StartedAt = ""
-		}
-	}
+	court.Playing = make([]string, 4) // 清空場上
+	court.StartedAt = ""
+	fillFromQueue(court) // 換排隊的人上場(缺幾補幾)
 	return repository.PutCourt(ctx, *court)
 }
 
@@ -291,10 +275,7 @@ func KickPlayer(ctx context.Context, sessionID, courtID, playerID string) error 
 	court.Playing = normPlaying(court.Playing)
 	clearSlot(court.Playing, playerID)
 	court.Queue = remove(court.Queue, playerID)
-	if playingCount(court.Playing) == 0 {
-		court.Status = model.CourtEmpty
-		court.StartedAt = ""
-	}
+	fillFromQueue(court) // 踢掉後遞補排隊的人
 	return repository.PutCourt(ctx, *court)
 }
 
@@ -321,6 +302,25 @@ func AdminAddToPlaying(ctx context.Context, sessionID, courtID, playerID string)
 	if playingCount(court.Playing) == 4 {
 		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	}
+	return repository.PutCourt(ctx, *court)
+}
+
+// AdminAddToQueue puts a player into a court's queue (leader)
+func AdminAddToQueue(ctx context.Context, sessionID, courtID, playerID string) error {
+	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	if err != nil {
+		return err
+	}
+	court.Playing = normPlaying(court.Playing)
+	if len(court.Queue) >= 4 {
+		return fmt.Errorf("排隊已滿")
+	}
+	if contains(court.Queue, playerID) {
+		return nil // already queued here
+	}
+	clearSlot(court.Playing, playerID) // 若原本在這場場上,先移除
+	court.Queue = append(court.Queue, playerID)
+	fillFromQueue(court) // 有空位就直接補上場,否則留在排隊
 	return repository.PutCourt(ctx, *court)
 }
 
@@ -358,6 +358,36 @@ func toSlots(ids []string, playerMap map[string]model.SessionPlayer) []model.Pla
 		})
 	}
 	return slots
+}
+
+// fillFromQueue drains the queue into empty playing slots (缺幾補幾),
+// then recomputes status + the 開打 clock. Keeps the invariant that the queue
+// is only non-empty while the court is full.
+func fillFromQueue(court *model.Court) {
+	court.Playing = normPlaying(court.Playing)
+	for i := range court.Playing {
+		if len(court.Queue) == 0 {
+			break
+		}
+		if court.Playing[i] == "" {
+			court.Playing[i] = court.Queue[0]
+			court.Queue = court.Queue[1:]
+		}
+	}
+	n := playingCount(court.Playing)
+	if n == 0 {
+		court.Status = model.CourtEmpty
+		court.StartedAt = ""
+		return
+	}
+	court.Status = model.CourtPlaying
+	if n == 4 {
+		if court.StartedAt == "" {
+			court.StartedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+	} else {
+		court.StartedAt = "" // 還沒滿就不計時
+	}
 }
 
 // normPlaying returns a length-4 positional slice ("" = empty slot)

@@ -114,3 +114,20 @@ func AdminAddToPlaying(c *gin.Context) {
 	}
 	ok(c, gin.H{"added": "playing"})
 }
+
+// POST /api/sessions/:id/courts/:courtId/add-queue  (team leader)
+func AdminAddToQueue(c *gin.Context) {
+	var body struct {
+		PlayerID string `json:"player_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := service.AdminAddToQueue(c.Request.Context(),
+		c.Param("id"), c.Param("courtId"), body.PlayerID); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"added": "queue"})
+}

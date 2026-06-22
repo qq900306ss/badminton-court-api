@@ -51,6 +51,7 @@ func NewRouter() *gin.Engine {
 	leader.POST("/sessions/:id/courts/:courtId/end", EndCourt)
 	leader.POST("/sessions/:id/courts/:courtId/kick", KickPlayer)
 	leader.POST("/sessions/:id/courts/:courtId/add-playing", AdminAddToPlaying)
+	leader.POST("/sessions/:id/courts/:courtId/add-queue", AdminAddToQueue)
 
 	// superadmin only
 	admin := api.Group("/admin")
