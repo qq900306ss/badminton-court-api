@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -11,6 +12,12 @@ import (
 	"github.com/qq900306ss/badminton-court-api/internal/repository"
 	"github.com/qq900306ss/badminton-court-api/internal/service"
 	"golang.org/x/crypto/bcrypt"
+)
+
+const (
+	maxNameLen        = 40  // runes
+	maxTitleLen       = 60  // runes
+	maxSessionPlayers = 200 // per session, anti-spam cap
 )
 
 // POST /api/sessions  (team leader)
@@ -27,6 +34,10 @@ func CreateSession(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if utf8.RuneCountInString(body.Title) > maxTitleLen || len(body.Password) > 100 {
+		fail(c, http.StatusBadRequest, "名稱或密碼過長")
 		return
 	}
 
@@ -114,6 +125,10 @@ func JoinSession(c *gin.Context) {
 		fail(c, http.StatusUnauthorized, "wrong password")
 		return
 	}
+	if utf8.RuneCountInString(body.DisplayName) > maxNameLen {
+		fail(c, http.StatusBadRequest, "名字太長")
+		return
+	}
 
 	// find or create player
 	players, _ := repository.GetSessionPlayers(c.Request.Context(), sessionID)
@@ -122,6 +137,10 @@ func JoinSession(c *gin.Context) {
 			ok(c, gin.H{"player_id": p.PlayerID, "display_name": p.DisplayName})
 			return
 		}
+	}
+	if len(players) >= maxSessionPlayers {
+		fail(c, http.StatusBadRequest, "這場人數已達上限")
+		return
 	}
 
 	// new player (temp or roster add)
@@ -165,6 +184,10 @@ func AddSessionPlayer(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	if utf8.RuneCountInString(body.DisplayName) > maxNameLen {
+		fail(c, http.StatusBadRequest, "名字太長")
+		return
+	}
 
 	existing, _ := repository.GetSessionPlayers(c.Request.Context(), sessionID)
 	for _, p := range existing {
@@ -172,6 +195,10 @@ func AddSessionPlayer(c *gin.Context) {
 			ok(c, p) // already in this session — return it, no duplicate
 			return
 		}
+	}
+	if len(existing) >= maxSessionPlayers {
+		fail(c, http.StatusBadRequest, "這場人數已達上限")
+		return
 	}
 
 	p := model.SessionPlayer{

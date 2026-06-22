@@ -8,6 +8,8 @@ import (
 func NewRouter() *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.CORS())
+	r.Use(middleware.RateLimit())
+	r.Use(middleware.BodyLimit(64 * 1024)) // 64KB cap on request bodies
 
 	// health — never touches DynamoDB, used to verify the binary boots
 	r.GET("/", Health)

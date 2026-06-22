@@ -53,6 +53,21 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 	}, nil
 }
 
+// validatePlayer ensures the player_id is a real member of this session,
+// so attackers can't inject arbitrary IDs onto courts.
+func validatePlayer(ctx context.Context, sessionID, playerID string) error {
+	players, err := repository.GetSessionPlayers(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	for _, p := range players {
+		if p.PlayerID == playerID {
+			return nil
+		}
+	}
+	return fmt.Errorf("player not in this session")
+}
+
 // checkQueueOpen blocks player self-service (join playing / queue) before the
 // leader's configured queue-open time. Leaders bypass this via admin actions.
 func checkQueueOpen(ctx context.Context, sessionID string) error {
@@ -75,6 +90,9 @@ func checkQueueOpen(ctx context.Context, sessionID string) error {
 
 // JoinPlaying adds a player directly to playing if there's room (< 4)
 func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string) error {
+	if err := validatePlayer(ctx, sessionID, playerID); err != nil {
+		return err
+	}
 	if err := checkQueueOpen(ctx, sessionID); err != nil {
 		return err
 	}
@@ -100,6 +118,9 @@ func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string) error
 
 // JoinQueue adds a player to the queue if there's room (< 4) and playing is full
 func JoinQueue(ctx context.Context, sessionID, courtID, playerID string) error {
+	if err := validatePlayer(ctx, sessionID, playerID); err != nil {
+		return err
+	}
 	if err := checkQueueOpen(ctx, sessionID); err != nil {
 		return err
 	}
