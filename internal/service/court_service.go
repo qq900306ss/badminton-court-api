@@ -156,13 +156,31 @@ func JoinQueue(ctx context.Context, sessionID, courtID, playerID string) error {
 	return repository.PutCourt(ctx, *court)
 }
 
-// LeaveQueue removes a player from queue (players can only leave queue, not playing)
+// LeaveQueue removes a player from a court's queue
 func LeaveQueue(ctx context.Context, sessionID, courtID, playerID string) error {
 	court, err := repository.GetCourt(ctx, sessionID, courtID)
 	if err != nil {
 		return err
 	}
 	court.Queue = remove(court.Queue, playerID)
+	return repository.PutCourt(ctx, *court)
+}
+
+// LeavePlaying lets a player leave a court that is still gathering (< 4).
+// Once it's full (the game has started) only the leader can move people.
+func LeavePlaying(ctx context.Context, sessionID, courtID, playerID string) error {
+	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	if err != nil {
+		return err
+	}
+	if len(court.Playing) >= 4 {
+		return fmt.Errorf("比賽已開始,請找團主")
+	}
+	court.Playing = remove(court.Playing, playerID)
+	if len(court.Playing) == 0 {
+		court.Status = model.CourtEmpty
+		court.StartedAt = ""
+	}
 	return repository.PutCourt(ctx, *court)
 }
 

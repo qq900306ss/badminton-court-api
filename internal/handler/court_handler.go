@@ -52,6 +52,21 @@ func LeaveQueue(c *gin.Context) {
 	ok(c, gin.H{"left": "queue"})
 }
 
+// POST /api/sessions/:id/courts/:courtId/leave-playing
+func LeavePlaying(c *gin.Context) {
+	playerID := c.GetHeader("X-Player-ID")
+	if playerID == "" {
+		fail(c, http.StatusBadRequest, "missing X-Player-ID header")
+		return
+	}
+	if err := service.LeavePlaying(c.Request.Context(),
+		c.Param("id"), c.Param("courtId"), playerID); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"left": "playing"})
+}
+
 // POST /api/sessions/:id/courts/:courtId/end  (team leader)
 func EndCourt(c *gin.Context) {
 	if err := service.EndCourt(c.Request.Context(),
