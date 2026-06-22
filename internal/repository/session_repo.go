@@ -69,6 +69,21 @@ func ListOpenSessions(ctx context.Context) ([]model.Session, error) {
 	return sessions, nil
 }
 
+// ListAllSessions returns every session in the system (superadmin view).
+func ListAllSessions(ctx context.Context) ([]model.Session, error) {
+	out, err := client.Scan(ctx, &dynamodb.ScanInput{
+		TableName: aws.String(TableName("sessions")),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var sessions []model.Session
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &sessions); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
 // ListSessionsByOrg returns every session created by an org (for "my sessions").
 func ListSessionsByOrg(ctx context.Context, orgID string) ([]model.Session, error) {
 	out, err := client.Scan(ctx, &dynamodb.ScanInput{

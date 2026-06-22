@@ -195,6 +195,7 @@ func GetSessionPlayers(c *gin.Context) {
 func toSummary(s model.Session) model.SessionSummary {
 	return model.SessionSummary{
 		SessionID:   s.SessionID,
+		OrgID:       s.OrgID,
 		Title:       s.Title,
 		NumCourts:   s.NumCourts,
 		Status:      string(s.Status),

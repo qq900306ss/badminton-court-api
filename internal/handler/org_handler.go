@@ -92,6 +92,20 @@ func AdminCreateOrg(c *gin.Context) {
 	ok(c, o)
 }
 
+// GET /api/admin/sessions  — every session across all orgs (superadmin)
+func AdminListSessions(c *gin.Context) {
+	sessions, err := repository.ListAllSessions(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]model.SessionSummary, 0, len(sessions))
+	for _, s := range sessions {
+		out = append(out, toSummary(s))
+	}
+	ok(c, out)
+}
+
 // DELETE /api/admin/orgs/:orgId
 func AdminDeleteOrg(c *gin.Context) {
 	if err := repository.DeleteOrg(c.Request.Context(), c.Param("orgId")); err != nil {

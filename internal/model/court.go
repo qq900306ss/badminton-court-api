@@ -45,6 +45,7 @@ type SessionView struct {
 // leader's "my sessions" list — never includes the password.
 type SessionSummary struct {
 	SessionID   string `json:"session_id"`
+	OrgID       string `json:"org_id"`
 	Title       string `json:"title"`
 	NumCourts   int    `json:"num_courts"`
 	Status      string `json:"status"`

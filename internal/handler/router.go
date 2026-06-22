@@ -50,6 +50,7 @@ func NewRouter() *gin.Engine {
 	admin.GET("/orgs", AdminListOrgs)
 	admin.POST("/orgs", AdminCreateOrg)
 	admin.DELETE("/orgs/:orgId", AdminDeleteOrg)
+	admin.GET("/sessions", AdminListSessions)
 
 	return r
 }
