@@ -140,6 +140,40 @@ func GetSession(c *gin.Context) {
 	ok(c, view)
 }
 
+// POST /api/sessions/:id/players  — leader adds a person to this session
+// (from the roster or a brand-new name). Idempotent on display_name.
+func AddSessionPlayer(c *gin.Context) {
+	sessionID := c.Param("id")
+	var body struct {
+		DisplayName string `json:"display_name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	existing, _ := repository.GetSessionPlayers(c.Request.Context(), sessionID)
+	for _, p := range existing {
+		if p.DisplayName == body.DisplayName {
+			ok(c, p) // already in this session — return it, no duplicate
+			return
+		}
+	}
+
+	p := model.SessionPlayer{
+		SessionID:   sessionID,
+		PlayerID:    uuid.New().String(),
+		DisplayName: body.DisplayName,
+		IsTemp:      false,
+		JoinedAt:    time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := repository.PutSessionPlayer(c.Request.Context(), p); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ok(c, p)
+}
+
 // GET /api/sessions/:id/players
 func GetSessionPlayers(c *gin.Context) {
 	players, err := repository.GetSessionPlayers(c.Request.Context(), c.Param("id"))
