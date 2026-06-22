@@ -18,7 +18,7 @@ func CreateSession(c *gin.Context) {
 	orgID, _ := c.Get("org_id")
 	var body struct {
 		Password    string   `json:"password" binding:"required"`
-		NumCourts   int      `json:"num_courts" binding:"required,min=1,max=6"`
+		NumCourts   int      `json:"num_courts" binding:"required,min=1,max=30"`
 		PlayerNames []string `json:"player_names"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
