@@ -112,8 +112,8 @@ func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string) error
 	if len(court.Playing) > 0 {
 		court.Status = model.CourtPlaying
 	}
-	// "開打" time = the moment it fills to 4 (fallback: first person in)
-	if len(court.Playing) == 4 || court.StartedAt == "" {
+	// 開打計時只在「湊滿 4 人」那一刻才起算;1~3 人是湊人中,不計時
+	if len(court.Playing) == 4 {
 		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 	return repository.PutCourt(ctx, *court)
@@ -204,7 +204,12 @@ func EndCourt(ctx context.Context, sessionID, courtID string) error {
 		court.StartedAt = ""
 	} else {
 		court.Status = model.CourtPlaying
-		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
+		// only start the clock if the next group is already full
+		if len(court.Playing) == 4 {
+			court.StartedAt = time.Now().UTC().Format(time.RFC3339)
+		} else {
+			court.StartedAt = ""
+		}
 	}
 	return repository.PutCourt(ctx, *court)
 }
@@ -238,7 +243,7 @@ func AdminAddToPlaying(ctx context.Context, sessionID, courtID, playerID string)
 		court.Playing = append(court.Playing, playerID)
 	}
 	court.Status = model.CourtPlaying
-	if len(court.Playing) == 4 || court.StartedAt == "" {
+	if len(court.Playing) == 4 {
 		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 	return repository.PutCourt(ctx, *court)
