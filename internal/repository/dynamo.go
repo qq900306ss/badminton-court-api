@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -27,7 +29,10 @@ func Init(ctx context.Context) error {
 		return fmt.Errorf("load aws config: %w", err)
 	}
 	client = dynamodb.NewFromConfig(cfg)
-	return ensureTables(ctx)
+	// best-effort: never crash the function if a table can't be created.
+	// Errors are logged so they surface in CloudWatch and via /health.
+	ensureTables(ctx)
+	return nil
 }
 
 func TableName(name string) string {
@@ -38,7 +43,10 @@ func Client() *dynamodb.Client {
 	return client
 }
 
-func ensureTables(ctx context.Context) error {
+// lastTableError records the most recent table-setup failure for /health.
+var lastTableError string
+
+func ensureTables(ctx context.Context) {
 	tables := []struct {
 		name string
 		pk   string
@@ -54,10 +62,15 @@ func ensureTables(ctx context.Context) error {
 
 	for _, t := range tables {
 		if err := createTableIfNotExists(ctx, t.name, t.pk, t.sk); err != nil {
-			return err
+			lastTableError = err.Error()
+			log.Printf("ensureTables: %v", err)
 		}
 	}
-	return nil
+}
+
+// LastTableError exposes the most recent table-setup failure (for /health).
+func LastTableError() string {
+	return lastTableError
 }
 
 func createTableIfNotExists(ctx context.Context, name, pk, sk string) error {
@@ -85,19 +98,12 @@ func createTableIfNotExists(ctx context.Context, name, pk, sk string) error {
 		BillingMode:          types.BillingModePayPerRequest,
 	})
 	if err != nil {
-		// ignore "already exists" error
+		// ignore "already exists" — use stdlib errors.As, which correctly
+		// unwraps the SDK's *smithy.OperationError chain.
 		var resErr *types.ResourceInUseException
-		if !errorAs(err, &resErr) {
+		if !errors.As(err, &resErr) {
 			return fmt.Errorf("create table %s: %w", tableName, err)
 		}
 	}
 	return nil
-}
-
-func errorAs(err error, target interface{}) bool {
-	type causer interface{ As(interface{}) bool }
-	if c, ok := err.(causer); ok {
-		return c.As(target)
-	}
-	return false
 }

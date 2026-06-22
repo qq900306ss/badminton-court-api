@@ -9,6 +9,10 @@ func NewRouter() *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.CORS())
 
+	// health — never touches DynamoDB, used to verify the binary boots
+	r.GET("/", Health)
+	r.GET("/health", Health)
+
 	api := r.Group("/api")
 
 	// public — no auth

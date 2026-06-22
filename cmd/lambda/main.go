@@ -14,8 +14,10 @@ var ginLambda *ginadapter.GinLambda
 
 func init() {
 	ctx := context.Background()
+	// Non-fatal: log DB init problems but still start the function so /health
+	// works and DB errors surface as 500s (with detail) instead of a 502 crash.
 	if err := repository.Init(ctx); err != nil {
-		log.Fatalf("db init: %v", err)
+		log.Printf("db init: %v", err)
 	}
 	ginLambda = ginadapter.New(handler.NewRouter())
 }
