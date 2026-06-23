@@ -48,7 +48,30 @@ func UpdateSession(ctx context.Context, s model.Session) error {
 }
 
 // ListOpenSessions returns all sessions that haven't been closed (for the lobby).
+// Uses the status GSI (Query) when available; falls back to Scan otherwise.
 func ListOpenSessions(ctx context.Context) ([]model.Session, error) {
+	out, err := client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(TableName("sessions")),
+		IndexName:              aws.String("status-index"),
+		KeyConditionExpression: aws.String("#s = :open"),
+		ExpressionAttributeNames: map[string]string{
+			"#s": "status",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":open": &types.AttributeValueMemberS{Value: "open"},
+		},
+	})
+	if err != nil {
+		return scanOpenSessions(ctx) // GSI not ready yet → fall back
+	}
+	var sessions []model.Session
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &sessions); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
+func scanOpenSessions(ctx context.Context) ([]model.Session, error) {
 	out, err := client.Scan(ctx, &dynamodb.ScanInput{
 		TableName:        aws.String(TableName("sessions")),
 		FilterExpression: aws.String("#s = :open"),
