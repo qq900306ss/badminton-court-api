@@ -274,6 +274,24 @@ func RemoveCourt(ctx context.Context, sessionID, courtID string) error {
 	return repository.DeleteCourt(ctx, sessionID, courtID)
 }
 
+// RemoveSessionPlayer fully disconnects a person: pulls them off every court,
+// deletes their push subscription, and removes the session-player record so
+// their device's X-Player-ID becomes invalid (can't act anymore).
+func RemoveSessionPlayer(ctx context.Context, sessionID, playerID string) error {
+	courts, _ := repository.GetCourts(ctx, sessionID)
+	for _, c := range courts {
+		if contains(c.Playing, playerID) || contains(c.Queue, playerID) {
+			c.Playing = normPlaying(c.Playing)
+			clearSlot(c.Playing, playerID)
+			c.Queue = remove(c.Queue, playerID)
+			recomputeStatus(&c)
+			_ = repository.PutCourt(ctx, c)
+		}
+	}
+	_ = repository.DeletePushSub(ctx, playerID)
+	return repository.DeleteSessionPlayer(ctx, sessionID, playerID)
+}
+
 // KickPlayer removes a player from any state in a court (admin only)
 func KickPlayer(ctx context.Context, sessionID, courtID, playerID string) error {
 	court, err := repository.GetCourt(ctx, sessionID, courtID)

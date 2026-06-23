@@ -252,6 +252,15 @@ func AddSessionPlayer(c *gin.Context) {
 	ok(c, p)
 }
 
+// DELETE /api/sessions/:id/players/:playerId  — leader removes a person from the session
+func RemoveSessionPlayer(c *gin.Context) {
+	if err := service.RemoveSessionPlayer(c.Request.Context(), c.Param("id"), c.Param("playerId")); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ok(c, gin.H{"removed": true})
+}
+
 // POST /api/sessions/:id/players/:playerId/level  — leader changes a player's level
 func UpdatePlayerLevel(c *gin.Context) {
 	sessionID := c.Param("id")
