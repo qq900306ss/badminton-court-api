@@ -19,6 +19,8 @@ func NewRouter() *gin.Engine {
 
 	// public — no auth
 	api.POST("/auth/google", GoogleCallback)
+	api.GET("/push/vapid", PushVapid)
+	api.POST("/sessions/:id/push-subscribe", PushSubscribe)
 	api.GET("/sessions/open", ListOpenSessions)
 	api.POST("/sessions/:id/verify-password", VerifyPassword)
 	api.POST("/sessions/:id/join", JoinSession)

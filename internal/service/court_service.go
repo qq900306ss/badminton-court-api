@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -187,8 +188,12 @@ func LeavePlaying(ctx context.Context, sessionID, courtID, playerID string) erro
 		return fmt.Errorf("比賽已開始,請找團主")
 	}
 	clearSlot(court.Playing, playerID)
-	fillFromQueue(court) // 走了之後若有人排隊就遞補
-	return repository.PutCourt(ctx, *court)
+	promoted := fillFromQueue(court) // 走了之後若有人排隊就遞補
+	if err := repository.PutCourt(ctx, *court); err != nil {
+		return err
+	}
+	pushPromoted(ctx, court, promoted)
+	return nil
 }
 
 // creditFinishedGame gives everyone currently playing on the court +1 game and
@@ -241,8 +246,12 @@ func EndCourt(ctx context.Context, sessionID, courtID string) error {
 
 	court.Playing = make([]string, 4) // 清空場上
 	court.StartedAt = ""
-	fillFromQueue(court) // 換排隊的人上場(缺幾補幾)
-	return repository.PutCourt(ctx, *court)
+	promoted := fillFromQueue(court) // 換排隊的人上場(缺幾補幾)
+	if err := repository.PutCourt(ctx, *court); err != nil {
+		return err
+	}
+	pushPromoted(ctx, court, promoted)
+	return nil
 }
 
 // RenameCourt sets a court's custom name (leader)
@@ -275,8 +284,12 @@ func KickPlayer(ctx context.Context, sessionID, courtID, playerID string) error 
 	court.Playing = normPlaying(court.Playing)
 	clearSlot(court.Playing, playerID)
 	court.Queue = remove(court.Queue, playerID)
-	fillFromQueue(court) // 踢掉後遞補排隊的人
-	return repository.PutCourt(ctx, *court)
+	promoted := fillFromQueue(court) // 踢掉後遞補排隊的人
+	if err := repository.PutCourt(ctx, *court); err != nil {
+		return err
+	}
+	pushPromoted(ctx, court, promoted)
+	return nil
 }
 
 // removeFromOtherCourts pulls a player out of every court except keepCourtID
@@ -386,18 +399,45 @@ func toSlots(ids []string, playerMap map[string]model.SessionPlayer) []model.Pla
 // fillFromQueue drains the queue into empty playing slots (缺幾補幾),
 // then recomputes status + the 開打 clock. Keeps the invariant that the queue
 // is only non-empty while the court is full.
-func fillFromQueue(court *model.Court) {
+// fillFromQueue drains the queue into empty slots and returns the promoted ids.
+func fillFromQueue(court *model.Court) []string {
 	court.Playing = normPlaying(court.Playing)
+	promoted := []string{}
 	for i := range court.Playing {
 		if len(court.Queue) == 0 {
 			break
 		}
 		if court.Playing[i] == "" {
 			court.Playing[i] = court.Queue[0]
+			promoted = append(promoted, court.Queue[0])
 			court.Queue = court.Queue[1:]
 		}
 	}
 	recomputeStatus(court)
+	return promoted
+}
+
+// pushPromoted notifies each promoted player it's their turn — fanned out
+// concurrently (goroutine per player) and waited on, so the up-to-4 pushes
+// go out in parallel without the handler freezing before they finish.
+func pushPromoted(ctx context.Context, court *model.Court, promoted []string) {
+	if len(promoted) == 0 {
+		return
+	}
+	name := court.Name
+	if name == "" {
+		name = fmt.Sprintf("場地 %d", courtNum(court.CourtID))
+	}
+	body := name + " · 快回來上場"
+	var wg sync.WaitGroup
+	for _, pid := range promoted {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			SendTurnPush(ctx, id, body)
+		}(pid)
+	}
+	wg.Wait()
 }
 
 // recomputeStatus updates status + the 開打 clock from the current playing slots
