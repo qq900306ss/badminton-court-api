@@ -161,8 +161,11 @@ func JoinQueue(ctx context.Context, sessionID, courtID, playerID string) error {
 	if len(court.Queue) >= 4 {
 		return fmt.Errorf("queue is full")
 	}
+	if contains(court.Playing, playerID) || contains(court.Queue, playerID) {
+		return fmt.Errorf("已經在這個場地了")
+	}
 	court.Queue = append(court.Queue, playerID)
-	fillFromQueue(court) // 若場上還有空位就直接遞補上場
+	recomputeStatus(court) // 純排隊:留在排隊,不自動上場
 	return repository.PutCourt(ctx, *court)
 }
 
@@ -188,12 +191,8 @@ func LeavePlaying(ctx context.Context, sessionID, courtID, playerID string) erro
 		return fmt.Errorf("比賽已開始,請找團主")
 	}
 	clearSlot(court.Playing, playerID)
-	promoted := fillFromQueue(court) // 走了之後若有人排隊就遞補
-	if err := repository.PutCourt(ctx, *court); err != nil {
-		return err
-	}
-	pushPromoted(ctx, court, promoted)
-	return nil
+	recomputeStatus(court) // 留下空位給人選,不自動補
+	return repository.PutCourt(ctx, *court)
 }
 
 // creditFinishedGame gives everyone currently playing on the court +1 game and
@@ -284,16 +283,12 @@ func KickPlayer(ctx context.Context, sessionID, courtID, playerID string) error 
 	court.Playing = normPlaying(court.Playing)
 	clearSlot(court.Playing, playerID)
 	court.Queue = remove(court.Queue, playerID)
-	promoted := fillFromQueue(court) // 踢掉後遞補排隊的人
-	if err := repository.PutCourt(ctx, *court); err != nil {
-		return err
-	}
-	pushPromoted(ctx, court, promoted)
-	return nil
+	recomputeStatus(court)
+	return repository.PutCourt(ctx, *court)
 }
 
-// removeFromOtherCourts pulls a player out of every court except keepCourtID
-// (and backfills those courts from their own queue), enforcing one court per player.
+// removeFromOtherCourts pulls a player out of every court except keepCourtID,
+// enforcing one court per player.
 func removeFromOtherCourts(ctx context.Context, sessionID, playerID, keepCourtID string) {
 	courts, err := repository.GetCourts(ctx, sessionID)
 	if err != nil {
@@ -307,7 +302,7 @@ func removeFromOtherCourts(ctx context.Context, sessionID, playerID, keepCourtID
 			c.Playing = normPlaying(c.Playing)
 			clearSlot(c.Playing, playerID)
 			c.Queue = remove(c.Queue, playerID)
-			fillFromQueue(&c)
+			recomputeStatus(&c)
 			_ = repository.PutCourt(ctx, c)
 		}
 	}
