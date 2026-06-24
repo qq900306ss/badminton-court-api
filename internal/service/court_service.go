@@ -108,6 +108,34 @@ func checkQueueOpen(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+// updateCourt runs a read-modify-write against one court under an optimistic
+// lock. apply mutates the freshly-read court in place; if a concurrent writer
+// committed first, the conditional PutCourt is rejected and we re-read & re-apply
+// (so two people grabbing the same court can't silently overwrite each other).
+// apply may return a business error (e.g. "位置已經有人了") to abort without saving;
+// that is returned as-is and NOT retried.
+func updateCourt(ctx context.Context, sessionID, courtID string, apply func(*model.Court) error) error {
+	const maxTries = 6
+	for try := 0; try < maxTries; try++ {
+		court, err := repository.GetCourt(ctx, sessionID, courtID)
+		if err != nil {
+			return err
+		}
+		if err := apply(court); err != nil {
+			return err
+		}
+		err = repository.PutCourt(ctx, *court)
+		if err == nil {
+			return nil
+		}
+		if repository.IsConflict(err) {
+			continue // someone wrote between our read and write — re-read & retry
+		}
+		return err
+	}
+	return fmt.Errorf("系統忙碌中,請再試一次")
+}
+
 // JoinPlaying seats a player at a specific position (0=左上,1=右上,2=左下,3=右下)
 func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string, position int) error {
 	if position < 0 || position > 3 {
@@ -123,24 +151,22 @@ func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string, posit
 	if cid, _ := playerInAnyCourt(ctx, sessionID, playerID); cid != "" && cid != courtID {
 		return fmt.Errorf("你已經在其他場地了,請先退出")
 	}
-	court, err := repository.GetCourt(ctx, sessionID, courtID)
-	if err != nil {
-		return err
-	}
-	court.Playing = normPlaying(court.Playing)
-	if court.Playing[position] != "" {
-		return fmt.Errorf("這個位置已經有人了")
-	}
-	// leave any current spot in this court (moving position / promoting from queue)
-	clearSlot(court.Playing, playerID)
-	court.Queue = remove(court.Queue, playerID)
-	court.Playing[position] = playerID
-	court.Status = model.CourtPlaying
-	// 開打計時只在「湊滿 4 人」那一刻才起算;1~3 人是湊人中,不計時
-	if playingCount(court.Playing) == 4 {
-		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
-	}
-	return repository.PutCourt(ctx, *court)
+	return updateCourt(ctx, sessionID, courtID, func(court *model.Court) error {
+		court.Playing = normPlaying(court.Playing)
+		if court.Playing[position] != "" {
+			return fmt.Errorf("這個位置已經有人了")
+		}
+		// leave any current spot in this court (moving position / promoting from queue)
+		clearSlot(court.Playing, playerID)
+		court.Queue = remove(court.Queue, playerID)
+		court.Playing[position] = playerID
+		court.Status = model.CourtPlaying
+		// 開打計時只在「湊滿 4 人」那一刻才起算;1~3 人是湊人中,不計時
+		if playingCount(court.Playing) == 4 {
+			court.StartedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return nil
+	})
 }
 
 // JoinQueue adds a player to the queue if there's room (< 4) and playing is full
@@ -154,45 +180,39 @@ func JoinQueue(ctx context.Context, sessionID, courtID, playerID string) error {
 	if cid, _ := playerInAnyCourt(ctx, sessionID, playerID); cid != "" {
 		return fmt.Errorf("你已經在其他場地了,請先退出")
 	}
-	court, err := repository.GetCourt(ctx, sessionID, courtID)
-	if err != nil {
-		return err
-	}
-	if len(court.Queue) >= 4 {
-		return fmt.Errorf("queue is full")
-	}
-	if contains(court.Playing, playerID) || contains(court.Queue, playerID) {
-		return fmt.Errorf("已經在這個場地了")
-	}
-	court.Queue = append(court.Queue, playerID)
-	recomputeStatus(court) // 純排隊:留在排隊,不自動上場
-	return repository.PutCourt(ctx, *court)
+	return updateCourt(ctx, sessionID, courtID, func(court *model.Court) error {
+		if len(court.Queue) >= 4 {
+			return fmt.Errorf("queue is full")
+		}
+		if contains(court.Playing, playerID) || contains(court.Queue, playerID) {
+			return fmt.Errorf("已經在這個場地了")
+		}
+		court.Queue = append(court.Queue, playerID)
+		recomputeStatus(court) // 純排隊:留在排隊,不自動上場
+		return nil
+	})
 }
 
 // LeaveQueue removes a player from a court's queue
 func LeaveQueue(ctx context.Context, sessionID, courtID, playerID string) error {
-	court, err := repository.GetCourt(ctx, sessionID, courtID)
-	if err != nil {
-		return err
-	}
-	court.Queue = remove(court.Queue, playerID)
-	return repository.PutCourt(ctx, *court)
+	return updateCourt(ctx, sessionID, courtID, func(court *model.Court) error {
+		court.Queue = remove(court.Queue, playerID)
+		return nil
+	})
 }
 
 // LeavePlaying lets a player leave a court that is still gathering (< 4).
 // Once it's full (the game has started) only the leader can move people.
 func LeavePlaying(ctx context.Context, sessionID, courtID, playerID string) error {
-	court, err := repository.GetCourt(ctx, sessionID, courtID)
-	if err != nil {
-		return err
-	}
-	court.Playing = normPlaying(court.Playing)
-	if playingCount(court.Playing) >= 4 {
-		return fmt.Errorf("比賽已開始,請找團主")
-	}
-	clearSlot(court.Playing, playerID)
-	recomputeStatus(court) // 留下空位給人選,不自動補
-	return repository.PutCourt(ctx, *court)
+	return updateCourt(ctx, sessionID, courtID, func(court *model.Court) error {
+		court.Playing = normPlaying(court.Playing)
+		if playingCount(court.Playing) >= 4 {
+			return fmt.Errorf("比賽已開始,請找團主")
+		}
+		clearSlot(court.Playing, playerID)
+		recomputeStatus(court) // 留下空位給人選,不自動補
+		return nil
+	})
 }
 
 // creditFinishedGame gives everyone currently playing on the court +1 game and
@@ -236,31 +256,32 @@ func creditFinishedGame(ctx context.Context, sessionID string, court *model.Cour
 // EndCourt rotates: playing → cleared, queue → playing.
 // Everyone who was playing gets credited one game.
 func EndCourt(ctx context.Context, sessionID, courtID string) error {
-	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	// snapshot of who was playing (for crediting) + the post-rotation court, both
+	// captured on the attempt that actually commits — so a concurrent write that
+	// forces a retry never double-credits the finished game.
+	var finished model.Court
+	var promoted []string
+	err := updateCourt(ctx, sessionID, courtID, func(court *model.Court) error {
+		finished = *court                 // Playing slice still points at the old players
+		court.Playing = make([]string, 4) // 清空場上
+		court.StartedAt = ""
+		promoted = fillFromQueue(court) // 換排隊的人上場(缺幾補幾)
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-
-	creditFinishedGame(ctx, sessionID, court)
-
-	court.Playing = make([]string, 4) // 清空場上
-	court.StartedAt = ""
-	promoted := fillFromQueue(court) // 換排隊的人上場(缺幾補幾)
-	if err := repository.PutCourt(ctx, *court); err != nil {
-		return err
-	}
-	pushPromoted(ctx, court, promoted)
+	creditFinishedGame(ctx, sessionID, &finished) // side effects ONCE, after commit
+	pushPromoted(ctx, &finished, promoted)
 	return nil
 }
 
 // RenameCourt sets a court's custom name (leader)
 func RenameCourt(ctx context.Context, sessionID, courtID, name string) error {
-	court, err := repository.GetCourt(ctx, sessionID, courtID)
-	if err != nil {
-		return err
-	}
-	court.Name = name
-	return repository.PutCourt(ctx, *court)
+	return updateCourt(ctx, sessionID, courtID, func(court *model.Court) error {
+		court.Name = name
+		return nil
+	})
 }
 
 // RemoveCourt deletes a court (leader). Players currently playing are credited
@@ -281,11 +302,13 @@ func RemoveSessionPlayer(ctx context.Context, sessionID, playerID string) error 
 	courts, _ := repository.GetCourts(ctx, sessionID)
 	for _, c := range courts {
 		if contains(c.Playing, playerID) || contains(c.Queue, playerID) {
-			c.Playing = normPlaying(c.Playing)
-			clearSlot(c.Playing, playerID)
-			c.Queue = remove(c.Queue, playerID)
-			recomputeStatus(&c)
-			_ = repository.PutCourt(ctx, c)
+			_ = updateCourt(ctx, sessionID, c.CourtID, func(court *model.Court) error {
+				court.Playing = normPlaying(court.Playing)
+				clearSlot(court.Playing, playerID)
+				court.Queue = remove(court.Queue, playerID)
+				recomputeStatus(court)
+				return nil
+			})
 		}
 	}
 	_ = repository.DeletePushSub(ctx, playerID)
@@ -294,15 +317,13 @@ func RemoveSessionPlayer(ctx context.Context, sessionID, playerID string) error 
 
 // KickPlayer removes a player from any state in a court (admin only)
 func KickPlayer(ctx context.Context, sessionID, courtID, playerID string) error {
-	court, err := repository.GetCourt(ctx, sessionID, courtID)
-	if err != nil {
-		return err
-	}
-	court.Playing = normPlaying(court.Playing)
-	clearSlot(court.Playing, playerID)
-	court.Queue = remove(court.Queue, playerID)
-	recomputeStatus(court)
-	return repository.PutCourt(ctx, *court)
+	return updateCourt(ctx, sessionID, courtID, func(court *model.Court) error {
+		court.Playing = normPlaying(court.Playing)
+		clearSlot(court.Playing, playerID)
+		court.Queue = remove(court.Queue, playerID)
+		recomputeStatus(court)
+		return nil
+	})
 }
 
 // removeFromOtherCourts pulls a player out of every court except keepCourtID,
@@ -317,60 +338,75 @@ func removeFromOtherCourts(ctx context.Context, sessionID, playerID, keepCourtID
 			continue
 		}
 		if contains(c.Playing, playerID) || contains(c.Queue, playerID) {
-			c.Playing = normPlaying(c.Playing)
-			clearSlot(c.Playing, playerID)
-			c.Queue = remove(c.Queue, playerID)
-			recomputeStatus(&c)
-			_ = repository.PutCourt(ctx, c)
+			_ = updateCourt(ctx, sessionID, c.CourtID, func(court *model.Court) error {
+				court.Playing = normPlaying(court.Playing)
+				clearSlot(court.Playing, playerID)
+				court.Queue = remove(court.Queue, playerID)
+				recomputeStatus(court)
+				return nil
+			})
 		}
 	}
 }
 
 // AdminAddToPlaying force-adds a player to the first empty slot (admin, bypasses queue)
 func AdminAddToPlaying(ctx context.Context, sessionID, courtID, playerID string) error {
-	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	pre, err := repository.GetCourt(ctx, sessionID, courtID)
 	if err != nil {
 		return err
 	}
-	court.Playing = normPlaying(court.Playing)
-	if playingCount(court.Playing) >= 4 {
+	if playingCount(normPlaying(pre.Playing)) >= 4 {
 		return fmt.Errorf("court playing is full")
 	}
 	removeFromOtherCourts(ctx, sessionID, playerID, courtID)
-	court.Queue = remove(court.Queue, playerID)
-	if !contains(court.Playing, playerID) {
-		for i := range court.Playing {
-			if court.Playing[i] == "" {
-				court.Playing[i] = playerID
-				break
+	return updateCourt(ctx, sessionID, courtID, func(court *model.Court) error {
+		court.Playing = normPlaying(court.Playing)
+		if playingCount(court.Playing) >= 4 {
+			return fmt.Errorf("court playing is full")
+		}
+		court.Queue = remove(court.Queue, playerID)
+		if !contains(court.Playing, playerID) {
+			for i := range court.Playing {
+				if court.Playing[i] == "" {
+					court.Playing[i] = playerID
+					break
+				}
 			}
 		}
-	}
-	court.Status = model.CourtPlaying
-	if playingCount(court.Playing) == 4 {
-		court.StartedAt = time.Now().UTC().Format(time.RFC3339)
-	}
-	return repository.PutCourt(ctx, *court)
+		court.Status = model.CourtPlaying
+		if playingCount(court.Playing) == 4 {
+			court.StartedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		return nil
+	})
 }
 
 // AdminAddToQueue puts a player into a court's queue (leader)
 func AdminAddToQueue(ctx context.Context, sessionID, courtID, playerID string) error {
-	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	pre, err := repository.GetCourt(ctx, sessionID, courtID)
 	if err != nil {
 		return err
 	}
-	court.Playing = normPlaying(court.Playing)
-	if len(court.Queue) >= 4 {
+	if len(pre.Queue) >= 4 {
 		return fmt.Errorf("排隊已滿")
 	}
-	if contains(court.Queue, playerID) {
+	if contains(pre.Queue, playerID) {
 		return nil // already queued here
 	}
 	removeFromOtherCourts(ctx, sessionID, playerID, courtID)
-	clearSlot(court.Playing, playerID) // 若原本在這場場上,先移除
-	court.Queue = append(court.Queue, playerID)
-	recomputeStatus(court) // 團主明確要排隊 → 不自動補上場
-	return repository.PutCourt(ctx, *court)
+	return updateCourt(ctx, sessionID, courtID, func(court *model.Court) error {
+		court.Playing = normPlaying(court.Playing)
+		if len(court.Queue) >= 4 {
+			return fmt.Errorf("排隊已滿")
+		}
+		if contains(court.Queue, playerID) {
+			return nil // already queued here
+		}
+		clearSlot(court.Playing, playerID) // 若原本在這場場上,先移除
+		court.Queue = append(court.Queue, playerID)
+		recomputeStatus(court) // 團主明確要排隊 → 不自動補上場
+		return nil
+	})
 }
 
 // toPlayingSlots returns a length-4 positional slice (empty slot → blank PlayerSlot)

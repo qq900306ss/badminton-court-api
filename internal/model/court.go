@@ -15,6 +15,7 @@ type Court struct {
 	Playing   []string    `dynamodbav:"playing" json:"playing"` // player_ids, max 4
 	Queue     []string    `dynamodbav:"queue" json:"queue"`     // player_ids, max 4
 	StartedAt string      `dynamodbav:"started_at,omitempty" json:"started_at,omitempty"`
+	Version   int         `dynamodbav:"version" json:"-"` // optimistic lock; bumped on every write
 }
 
 // CourtView is what the frontend renders — includes display names
