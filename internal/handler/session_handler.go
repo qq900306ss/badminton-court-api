@@ -55,6 +55,7 @@ func CreateSession(c *gin.Context) {
 		OrgID:        orgID.(string),
 		Title:        body.Title,
 		PasswordHash: string(hash),
+		Password:     body.Password,
 		NumCourts:    body.NumCourts,
 		Status:       model.SessionOpen,
 		StartAt:      body.StartAt,
@@ -378,6 +379,63 @@ func CloseSession(c *gin.Context) {
 		return
 	}
 	ok(c, gin.H{"closed": true})
+}
+
+// loadOwnedSession fetches a session and verifies the calling leader's org owns
+// it. Used by endpoints that expose or change the plaintext gate code.
+func loadOwnedSession(c *gin.Context) (*model.Session, bool) {
+	orgID, _ := c.Get("org_id")
+	session, err := repository.GetSession(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		fail(c, http.StatusNotFound, "session not found")
+		return nil, false
+	}
+	if session.OrgID != orgID.(string) {
+		fail(c, http.StatusForbidden, "無權限操作這場球局")
+		return nil, false
+	}
+	return session, true
+}
+
+// GET /api/sessions/:id/password  — leader views the current gate code.
+// Legacy sessions (created before plaintext storage) return "" → 重設即可顯示.
+func GetSessionPassword(c *gin.Context) {
+	session, ok2 := loadOwnedSession(c)
+	if !ok2 {
+		return
+	}
+	ok(c, gin.H{"password": session.Password})
+}
+
+// PUT /api/sessions/:id/password  — leader changes the gate code.
+func SetSessionPassword(c *gin.Context) {
+	var body struct {
+		Password string `json:"password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, "missing password")
+		return
+	}
+	if l := utf8.RuneCountInString(body.Password); l < 1 || len(body.Password) > 100 {
+		fail(c, http.StatusBadRequest, "密碼長度不符(1~100)")
+		return
+	}
+	session, ok2 := loadOwnedSession(c)
+	if !ok2 {
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	session.PasswordHash = string(hash)
+	session.Password = body.Password
+	if err := repository.UpdateSession(c.Request.Context(), *session); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ok(c, gin.H{"password": body.Password})
 }
 
 // POST /api/sessions/:id/courts  — add a court (team leader)

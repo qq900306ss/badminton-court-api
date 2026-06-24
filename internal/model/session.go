@@ -12,6 +12,7 @@ type Session struct {
 	OrgID        string        `dynamodbav:"org_id" json:"org_id"`
 	Title        string        `dynamodbav:"title" json:"title"`
 	PasswordHash string        `dynamodbav:"password_hash" json:"-"`
+	Password     string        `dynamodbav:"password,omitempty" json:"-"` // plaintext gate code, leader-visible only; legacy sessions have none
 	NumCourts    int           `dynamodbav:"num_courts" json:"num_courts"`
 	Status       SessionStatus `dynamodbav:"status" json:"status"`
 	StartAt      string        `dynamodbav:"start_at,omitempty" json:"start_at,omitempty"`           // ISO, play window start

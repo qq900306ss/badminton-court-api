@@ -48,6 +48,8 @@ func NewRouter() *gin.Engine {
 	leader.POST("/sessions/:id/players/:playerId/level", UpdatePlayerLevel)
 	leader.DELETE("/sessions/:id/players/:playerId", RemoveSessionPlayer)
 	leader.POST("/sessions/:id/close", CloseSession)
+	leader.GET("/sessions/:id/password", GetSessionPassword)
+	leader.PUT("/sessions/:id/password", SetSessionPassword)
 	leader.POST("/sessions/:id/courts", AddCourt)
 	leader.PUT("/sessions/:id/courts/:courtId/name", RenameCourt)
 	leader.DELETE("/sessions/:id/courts/:courtId", RemoveCourt)
