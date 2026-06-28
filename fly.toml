@@ -1,25 +1,27 @@
-# Fly.io config — always-on Go backend (cmd/server). Tokyo, next to DynamoDB.
-app = "badminton-court-api"
-primary_region = "nrt"
+# fly.toml app configuration file generated for badminton-court-api on 2026-06-28T11:32:18Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'badminton-court-api'
+primary_region = 'nrt'
 
 [build]
 
 [http_service]
   internal_port = 8080
   force_https = true
-  # always-on: never stop the machine — a stopped machine drops WebSocket
-  # connections and means cold starts. this is what keeps real-time working.
-  auto_stop_machines = "off"
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
 
   [[http_service.checks]]
-    interval = "15s"
-    timeout = "2s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/health"
+    interval = '15s'
+    timeout = '2s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/health'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "256mb"
+  size = 'shared-cpu-1x'
+  memory = '256mb'
