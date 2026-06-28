@@ -1,0 +1,6 @@
+.git
+.github
+*.md
+DEPLOY.md
+.env
+.env.*
