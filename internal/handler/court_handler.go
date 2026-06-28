@@ -152,6 +152,16 @@ func EndCourt(c *gin.Context) {
 	ok(c, gin.H{"rotated": true})
 }
 
+// POST /api/sessions/:id/courts/:courtId/undo-end  (team leader) — undo a misclick
+func UndoEndCourt(c *gin.Context) {
+	if err := service.UndoEndCourt(c.Request.Context(),
+		c.Param("id"), c.Param("courtId")); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"undone": true})
+}
+
 // POST /api/sessions/:id/courts/:courtId/kick  (team leader)
 func KickPlayer(c *gin.Context) {
 	var body struct {

@@ -34,6 +34,12 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 
 	views := make([]model.CourtView, 0, len(courts))
 	for _, c := range courts {
+		canUndo := false
+		if c.LastEnd != nil {
+			if t, e := time.Parse(time.RFC3339, c.LastEnd.EndedAt); e == nil && time.Since(t) <= 10*time.Minute {
+				canUndo = true
+			}
+		}
 		cv := model.CourtView{
 			CourtID:   c.CourtID,
 			CourtNum:  courtNum(c.CourtID),
@@ -42,6 +48,7 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 			Playing:   toPlayingSlots(c.Playing, playerMap),
 			Queue:     toSlots(c.Queue, playerMap),
 			StartedAt: c.StartedAt,
+			CanUndo:   canUndo,
 		}
 		views = append(views, cv)
 	}
@@ -217,17 +224,12 @@ func LeavePlaying(ctx context.Context, sessionID, courtID, playerID string) erro
 
 // creditFinishedGame gives everyone currently playing on the court +1 game and
 // their minutes, and writes a GameLog. Shared by EndCourt and DeleteCourt.
-func creditFinishedGame(ctx context.Context, sessionID string, court *model.Court) {
+func creditFinishedGame(ctx context.Context, sessionID string, court *model.Court, endedAtID string) {
 	if playingCount(court.Playing) == 0 {
 		return
 	}
 	now := time.Now().UTC()
-	minutes := 0
-	if court.StartedAt != "" {
-		if started, perr := time.Parse(time.RFC3339, court.StartedAt); perr == nil {
-			minutes = int(now.Sub(started).Minutes())
-		}
-	}
+	minutes := elapsedMinutes(court.StartedAt)
 	players, _ := repository.GetSessionPlayers(ctx, sessionID)
 	pm := make(map[string]model.SessionPlayer, len(players))
 	for _, p := range players {
@@ -244,7 +246,7 @@ func creditFinishedGame(ctx context.Context, sessionID string, court *model.Cour
 	}
 	_ = repository.PutGameLog(ctx, model.GameLog{
 		SessionID:   sessionID,
-		EndedAtID:   now.Format(time.RFC3339) + "#" + uuid.New().String(),
+		EndedAtID:   endedAtID,
 		CourtNum:    courtNum(court.CourtID),
 		PlayerNames: names,
 		StartedAt:   court.StartedAt,
@@ -253,16 +255,47 @@ func creditFinishedGame(ctx context.Context, sessionID string, court *model.Cour
 	})
 }
 
+func elapsedMinutes(startedAt string) int {
+	if startedAt == "" {
+		return 0
+	}
+	if t, err := time.Parse(time.RFC3339, startedAt); err == nil {
+		return int(time.Since(t).Minutes())
+	}
+	return 0
+}
+
+func nonEmptyIDs(p []string) []string {
+	out := []string{}
+	for _, s := range p {
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // EndCourt rotates: playing → cleared, queue → playing.
 // Everyone who was playing gets credited one game.
 func EndCourt(ctx context.Context, sessionID, courtID string) error {
 	// snapshot of who was playing (for crediting) + the post-rotation court, both
 	// captured on the attempt that actually commits — so a concurrent write that
 	// forces a retry never double-credits the finished game.
+	endedAtID := time.Now().UTC().Format(time.RFC3339) + "#" + uuid.New().String()
 	var finished model.Court
 	var promoted []string
 	err := updateCourt(ctx, sessionID, courtID, func(court *model.Court) error {
-		finished = *court                 // Playing slice still points at the old players
+		finished = *court // Playing slice still points at the old players
+		// snapshot pre-end state onto the court so the leader can undo a misclick
+		court.LastEnd = &model.EndSnapshot{
+			Playing:   normPlaying(court.Playing),
+			Queue:     append([]string{}, court.Queue...),
+			StartedAt: court.StartedAt,
+			EndedAt:   time.Now().UTC().Format(time.RFC3339),
+			GameLogID: endedAtID,
+			Credited:  nonEmptyIDs(normPlaying(court.Playing)),
+			Minutes:   elapsedMinutes(court.StartedAt),
+		}
 		court.Playing = make([]string, 4) // 清空場上
 		court.StartedAt = ""
 		promoted = fillFromQueue(court) // 換排隊的人上場(缺幾補幾)
@@ -271,9 +304,52 @@ func EndCourt(ctx context.Context, sessionID, courtID string) error {
 	if err != nil {
 		return err
 	}
-	creditFinishedGame(ctx, sessionID, &finished) // side effects ONCE, after commit
+	creditFinishedGame(ctx, sessionID, &finished, endedAtID) // side effects ONCE, after commit
 	pushPromoted(ctx, &finished, promoted)
 	return nil
+}
+
+// UndoEndCourt reverses the last 結束場地 on a court (within 10 min): restores the
+// players, queue and 開打計時, and rolls back the credited games / GameLog.
+func UndoEndCourt(ctx context.Context, sessionID, courtID string) error {
+	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	if err != nil {
+		return err
+	}
+	snap := court.LastEnd
+	if snap == nil {
+		return fmt.Errorf("沒有可復原的結束")
+	}
+	if t, e := time.Parse(time.RFC3339, snap.EndedAt); e == nil && time.Since(t) > 10*time.Minute {
+		return fmt.Errorf("超過可復原時間(10 分鐘)")
+	}
+	// reverse the credit applied at end time
+	players, _ := repository.GetSessionPlayers(ctx, sessionID)
+	pm := make(map[string]model.SessionPlayer, len(players))
+	for _, p := range players {
+		pm[p.PlayerID] = p
+	}
+	for _, pid := range snap.Credited {
+		if p, ok := pm[pid]; ok {
+			if p.Games > 0 {
+				p.Games--
+			}
+			if p.TotalMinutes -= snap.Minutes; p.TotalMinutes < 0 {
+				p.TotalMinutes = 0
+			}
+			_ = repository.PutSessionPlayer(ctx, p)
+		}
+	}
+	_ = repository.DeleteGameLog(ctx, sessionID, snap.GameLogID)
+	// restore the court (one-shot: clear LastEnd)
+	return updateCourt(ctx, sessionID, courtID, func(c *model.Court) error {
+		c.Playing = normPlaying(snap.Playing)
+		c.Queue = append([]string{}, snap.Queue...)
+		c.StartedAt = snap.StartedAt
+		c.LastEnd = nil
+		recomputeStatus(c)
+		return nil
+	})
 }
 
 // RenameCourt sets a court's custom name (leader)
@@ -291,7 +367,8 @@ func RemoveCourt(ctx context.Context, sessionID, courtID string) error {
 	if err != nil {
 		return err
 	}
-	creditFinishedGame(ctx, sessionID, court) // 場上的人計入統計
+	endedAtID := time.Now().UTC().Format(time.RFC3339) + "#" + uuid.New().String()
+	creditFinishedGame(ctx, sessionID, court, endedAtID) // 場上的人計入統計
 	return repository.DeleteCourt(ctx, sessionID, courtID)
 }
 

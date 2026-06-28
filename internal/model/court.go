@@ -15,7 +15,20 @@ type Court struct {
 	Playing   []string    `dynamodbav:"playing" json:"playing"` // player_ids, max 4
 	Queue     []string    `dynamodbav:"queue" json:"queue"`     // player_ids, max 4
 	StartedAt string      `dynamodbav:"started_at,omitempty" json:"started_at,omitempty"`
-	Version   int         `dynamodbav:"version" json:"-"` // optimistic lock; bumped on every write
+	Version   int         `dynamodbav:"version" json:"-"`              // optimistic lock; bumped on every write
+	LastEnd   *EndSnapshot `dynamodbav:"last_end,omitempty" json:"-"` // for undo of the last 結束場地
+}
+
+// EndSnapshot is what's needed to undo a 結束場地: the pre-end court state +
+// the credit that was applied (to reverse it).
+type EndSnapshot struct {
+	Playing   []string `dynamodbav:"playing"`
+	Queue     []string `dynamodbav:"queue"`
+	StartedAt string   `dynamodbav:"started_at"`
+	EndedAt   string   `dynamodbav:"ended_at"`
+	GameLogID string   `dynamodbav:"game_log_id"`
+	Credited  []string `dynamodbav:"credited"` // player ids that got +1 game + minutes
+	Minutes   int      `dynamodbav:"minutes"`
 }
 
 // CourtView is what the frontend renders — includes display names
@@ -35,6 +48,7 @@ type CourtView struct {
 	Playing   []PlayerSlot `json:"playing"`
 	Queue     []PlayerSlot `json:"queue"`
 	StartedAt string       `json:"started_at,omitempty"` // 湊滿開打的時間
+	CanUndo   bool         `json:"can_undo,omitempty"`   // a recent 結束場地 is still undoable
 }
 
 type SessionView struct {

@@ -168,6 +168,17 @@ func PutGameLog(ctx context.Context, g model.GameLog) error {
 	return err
 }
 
+func DeleteGameLog(ctx context.Context, sessionID, endedAtID string) error {
+	_, err := client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		TableName: aws.String(TableName("game-logs")),
+		Key: map[string]types.AttributeValue{
+			"session_id":  &types.AttributeValueMemberS{Value: sessionID},
+			"ended_at_id": &types.AttributeValueMemberS{Value: endedAtID},
+		},
+	})
+	return err
+}
+
 func ListGameLogs(ctx context.Context, sessionID string) ([]model.GameLog, error) {
 	out, err := client.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(TableName("game-logs")),
