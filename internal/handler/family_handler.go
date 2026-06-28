@@ -24,8 +24,9 @@ func AddFamilyMember(c *gin.Context) {
 	sid := c.Param("id")
 	owner := c.GetString("player_id")
 	var body struct {
-		Name  string `json:"name" binding:"required"`
-		Level int    `json:"level"`
+		Name      string `json:"name" binding:"required"`
+		Level     int    `json:"level"`
+		AvatarURL string `json:"avatar_url"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -38,6 +39,10 @@ func AddFamilyMember(c *gin.Context) {
 	}
 	if body.Level < 0 || body.Level > 18 {
 		fail(c, http.StatusBadRequest, "level 必須 0-18")
+		return
+	}
+	if utf8.RuneCountInString(body.AvatarURL) > 300 {
+		fail(c, http.StatusBadRequest, "頭像資料過長")
 		return
 	}
 
@@ -65,6 +70,7 @@ func AddFamilyMember(c *gin.Context) {
 		Claimed:     true, // 由手機帶來、本人在場
 		OwnerID:     owner,
 		Pending:     true, // 等團主核准
+		AvatarURL:   body.AvatarURL,
 		JoinedAt:    time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := repository.PutSessionPlayer(c.Request.Context(), p); err != nil {
