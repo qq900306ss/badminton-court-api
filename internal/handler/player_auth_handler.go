@@ -185,6 +185,27 @@ func UpdatePlayerMe(c *gin.Context) {
 	ok(c, p)
 }
 
+// POST /api/players/me/avatar-upload-url  { content_type } — presigned S3 PUT for a custom avatar
+func AvatarUploadURL(c *gin.Context) {
+	pid, _ := c.Get("player_id")
+	var body struct {
+		ContentType string `json:"content_type"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	ct := body.ContentType
+	switch ct {
+	case "image/jpeg", "image/png", "image/webp", "image/gif":
+	default:
+		ct = "image/jpeg"
+	}
+	upload, public, err := repository.PresignAvatarUpload(c.Request.Context(), pid.(string), ct)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ok(c, gin.H{"upload_url": upload, "public_url": public})
+}
+
 // --- LINE OAuth (authorization code flow) ---
 
 type lineTokenResponse struct {

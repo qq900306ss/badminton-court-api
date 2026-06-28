@@ -11,11 +11,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 var (
-	client *dynamodb.Client
-	prefix string
+	client   *dynamodb.Client
+	s3Client *s3.Client
+	prefix   string
 )
 
 func Init(ctx context.Context) error {
@@ -29,6 +31,7 @@ func Init(ctx context.Context) error {
 		return fmt.Errorf("load aws config: %w", err)
 	}
 	client = dynamodb.NewFromConfig(cfg)
+	s3Client = s3.NewFromConfig(cfg)
 	// best-effort: never crash the function if a table can't be created.
 	// Errors are logged so they surface in CloudWatch and via /health.
 	ensureTables(ctx)

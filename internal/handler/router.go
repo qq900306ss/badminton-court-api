@@ -34,6 +34,7 @@ func NewRouter() *gin.Engine {
 	player.Use(middleware.RequirePlayer())
 	player.GET("/players/me", GetPlayerMe)
 	player.PUT("/players/me", UpdatePlayerMe)
+	player.POST("/players/me/avatar-upload-url", AvatarUploadURL)
 	player.POST("/sessions/:id/join", JoinSession)
 	player.POST("/sessions/:id/push-subscribe", PushSubscribe)
 
