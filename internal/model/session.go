@@ -11,6 +11,8 @@ type Session struct {
 	SessionID    string        `dynamodbav:"session_id" json:"session_id"`
 	OrgID        string        `dynamodbav:"org_id" json:"org_id"`
 	Title        string        `dynamodbav:"title" json:"title"`
+	City         string        `dynamodbav:"city,omitempty" json:"city,omitempty"`         // 縣市 (for the discovery directory)
+	District     string        `dynamodbav:"district,omitempty" json:"district,omitempty"` // 區
 	PasswordHash string        `dynamodbav:"password_hash" json:"-"`
 	Password     string        `dynamodbav:"password,omitempty" json:"-"` // plaintext gate code, leader-visible only; legacy sessions have none
 	NumCourts    int           `dynamodbav:"num_courts" json:"num_courts"`

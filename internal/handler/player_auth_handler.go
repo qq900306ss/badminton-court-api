@@ -142,7 +142,8 @@ func GetPlayerMe(c *gin.Context) {
 func UpdatePlayerMe(c *gin.Context) {
 	pid, _ := c.Get("player_id")
 	var body struct {
-		JoinName string `json:"join_name"`
+		JoinName     string `json:"join_name"`
+		DefaultLevel int    `json:"default_level"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -163,6 +164,9 @@ func UpdatePlayerMe(c *gin.Context) {
 		return
 	}
 	p.JoinName = name
+	if lvl := body.DefaultLevel; lvl >= 0 && lvl <= 18 {
+		p.DefaultLevel = lvl
+	}
 	if err := repository.PutPlayer(c.Request.Context(), *p); err != nil {
 		fail(c, http.StatusInternalServerError, err.Error())
 		return

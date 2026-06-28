@@ -26,6 +26,8 @@ func CreateSession(c *gin.Context) {
 	orgID, _ := c.Get("org_id")
 	var body struct {
 		Title       string   `json:"title"`
+		City        string   `json:"city"`
+		District    string   `json:"district"`
 		Password    string   `json:"password" binding:"required"`
 		NumCourts   int      `json:"num_courts" binding:"required,min=1,max=30"`
 		PlayerNames []string `json:"player_names"`
@@ -55,6 +57,8 @@ func CreateSession(c *gin.Context) {
 		SessionID:    sessionID,
 		OrgID:        orgID.(string),
 		Title:        body.Title,
+		City:         body.City,
+		District:     body.District,
 		PasswordHash: string(hash),
 		Password:     body.Password,
 		NumCourts:    body.NumCourts,
@@ -329,10 +333,16 @@ func GetSessionPlayers(c *gin.Context) {
 }
 
 func toSummary(s model.Session) model.SessionSummary {
+	city, district := s.City, s.District
+	if city == "" {
+		city, district = "台中市", "西屯區" // legacy sessions default to the home court
+	}
 	return model.SessionSummary{
 		SessionID:   s.SessionID,
 		OrgID:       s.OrgID,
 		Title:       s.Title,
+		City:        city,
+		District:    district,
 		NumCourts:   s.NumCourts,
 		Status:      string(s.Status),
 		StartAt:     s.StartAt,

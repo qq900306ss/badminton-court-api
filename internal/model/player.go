@@ -8,7 +8,8 @@ type Player struct {
 	ProviderSub string `dynamodbav:"provider_sub" json:"-"`                  // the provider's stable user id
 	ProviderKey string `dynamodbav:"provider_key" json:"-"`                  // GSI hash: "<provider>#<sub>" for find-or-create
 	DisplayName string `dynamodbav:"display_name" json:"display_name"`       // name from the provider
-	JoinName    string `dynamodbav:"join_name,omitempty" json:"join_name"`   // preferred 加入臨打團名稱 (defaults to DisplayName)
+	JoinName     string `dynamodbav:"join_name,omitempty" json:"join_name"`         // preferred 加入臨打團名稱 (defaults to DisplayName)
+	DefaultLevel int    `dynamodbav:"default_level,omitempty" json:"default_level"` // preferred 級數, pre-filled at join
 	AvatarURL   string `dynamodbav:"avatar_url,omitempty" json:"avatar_url,omitempty"`
 	Email       string `dynamodbav:"email,omitempty" json:"email,omitempty"` // superadmin-only — never put in PlayerSlot
 	CreatedAt   string `dynamodbav:"created_at" json:"created_at"`
