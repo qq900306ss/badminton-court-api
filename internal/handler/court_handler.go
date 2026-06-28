@@ -77,6 +77,11 @@ func VoteEndCourt(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	if ended {
+		// surface vote-driven auto-close in the leader's action log, so the
+		// leader doesn't wonder why a court closed without their input.
+		logAction(c, "vote_end", "🗳 場上玩家投票,自動結束了"+courtLabel(c, c.Param("courtId")))
+	}
 	ok(c, gin.H{"ended": ended, "votes": count, "needed": service.EndVoteThreshold})
 }
 
