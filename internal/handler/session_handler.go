@@ -553,6 +553,33 @@ func SetSessionPassword(c *gin.Context) {
 	ok(c, gin.H{"password": body.Password})
 }
 
+// SetSessionTimes lets the leader edit the play window + when self-queue opens.
+// All ISO-8601 strings; empty string clears that field.
+func SetSessionTimes(c *gin.Context) {
+	var body struct {
+		StartAt     string `json:"start_at"`
+		EndAt       string `json:"end_at"`
+		QueueOpenAt string `json:"queue_open_at"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	session, ok2 := loadOwnedSession(c)
+	if !ok2 {
+		return
+	}
+	session.StartAt = strings.TrimSpace(body.StartAt)
+	session.EndAt = strings.TrimSpace(body.EndAt)
+	session.QueueOpenAt = strings.TrimSpace(body.QueueOpenAt)
+	if err := repository.UpdateSession(c.Request.Context(), *session); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	logAction(c, "set_times", "更新了時間設定")
+	ok(c, session)
+}
+
 // POST /api/sessions/:id/courts  — add a court (team leader)
 func AddCourt(c *gin.Context) {
 	sessionID := c.Param("id")
