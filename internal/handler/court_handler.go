@@ -2,15 +2,21 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/qq900306ss/badminton-court-api/internal/realtime"
 	"github.com/qq900306ss/badminton-court-api/internal/service"
 )
 
-// notifyRemoved sends a best-effort push to a player the leader just removed.
-func notifyRemoved(playerID, msg string) {
+// notifyRemoved tells a player the leader just removed them: an instant in-app
+// toast via a targeted WS event (precise — only fires on real leader removal),
+// plus a best-effort web push for when the app is closed.
+func notifyRemoved(c *gin.Context, playerID, msg string) {
 	go service.SendTurnPush(context.Background(), playerID, msg)
+	realtime.Default.Broadcast(c.Param("id"),
+		[]byte(fmt.Sprintf(`{"t":"removed","player":%q,"msg":%q}`, playerID, msg)))
 }
 
 // POST /api/sessions/:id/courts/:courtId/join-playing  { position: 0-3 }
@@ -114,7 +120,7 @@ func LeaderUnseatPlaying(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	notifyRemoved(body.PlayerID, "團主把你移出場上了")
+	notifyRemoved(c, body.PlayerID, "團主把你移出場上了")
 	ok(c, gin.H{"left": "playing"})
 }
 
@@ -132,7 +138,7 @@ func LeaderUnseatQueue(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	notifyRemoved(body.PlayerID, "團主取消了你的排隊")
+	notifyRemoved(c, body.PlayerID, "團主取消了你的排隊")
 	ok(c, gin.H{"left": "queue"})
 }
 
@@ -160,7 +166,7 @@ func KickPlayer(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	notifyRemoved(body.PlayerID, "團主把你移出場地了")
+	notifyRemoved(c, body.PlayerID, "團主把你移出場地了")
 	ok(c, gin.H{"kicked": true})
 }
 
