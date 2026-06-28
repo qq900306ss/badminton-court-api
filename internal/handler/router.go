@@ -16,6 +16,7 @@ func NewRouter() *gin.Engine {
 	r.GET("/health", Health)
 
 	api := r.Group("/api")
+	api.Use(middleware.BroadcastOnChange()) // nudge WS rooms after any mutation
 
 	// public — no auth
 	api.POST("/auth/google", GoogleCallback)
@@ -26,6 +27,7 @@ func NewRouter() *gin.Engine {
 	api.POST("/sessions/:id/verify-password", VerifyPassword)
 	api.GET("/sessions/:id", GetSession)
 	api.GET("/sessions/:id/players", GetSessionPlayers)
+	api.GET("/sessions/:id/ws", SessionWS) // real-time nudges
 
 	// drop-in player — player JWT required (X-Player-ID is gone, pure JWT)
 	player := api.Group("/")
