@@ -48,5 +48,7 @@ type SessionPlayer struct {
 	IsTemp       bool   `dynamodbav:"is_temp" json:"is_temp"`
 	JoinedAt     string `dynamodbav:"joined_at" json:"joined_at"`
 	AccountID    string `dynamodbav:"account_id,omitempty" json:"-"`                    // linked player account (logged-in joins)
+	OwnerID      string `dynamodbav:"owner_id,omitempty" json:"owner_id,omitempty"`     // 家人子身份:控制它的手機帳號 account_id
+	Pending      bool   `dynamodbav:"pending,omitempty" json:"pending,omitempty"`       // 家人待團主核准(未核准不可排點)
 	AvatarURL    string `dynamodbav:"avatar_url,omitempty" json:"avatar_url,omitempty"` // copied from account, for rendering
 }

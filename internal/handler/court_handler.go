@@ -71,16 +71,21 @@ func LeavePlaying(c *gin.Context) {
 // Toggles the caller's vote to end the current game; auto-ends at the threshold.
 func VoteEndCourt(c *gin.Context) {
 	playerID := c.GetString("player_id")
-	ended, count, err := service.VoteEndCourt(c.Request.Context(),
+	ended, count, yes, no, err := service.VoteEndCourt(c.Request.Context(),
 		c.Param("id"), c.Param("courtId"), playerID)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	if ended {
-		// surface vote-driven auto-close in the leader's action log, so the
-		// leader doesn't wonder why a court closed without their input.
-		logAction(c, "vote_end", "🗳 場上玩家投票,自動結束了"+courtLabel(c, c.Param("courtId")))
+		// surface vote-driven auto-close in the leader's action log, with who
+		// agreed vs. who didn't, so the leader isn't confused by a court that
+		// closed without their input.
+		detail := "🗳 " + courtLabel(c, c.Param("courtId")) + " 投票結束 — 同意:" + playerNamesJoined(c, yes)
+		if len(no) > 0 {
+			detail += ";未同意:" + playerNamesJoined(c, no)
+		}
+		logAction(c, "vote_end", detail)
 	}
 	ok(c, gin.H{"ended": ended, "votes": count, "needed": service.EndVoteThreshold})
 }

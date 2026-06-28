@@ -302,7 +302,7 @@ func votesStillPlaying(votes, playing []string) []string {
 // VoteEndCourt toggles a playing player's vote to end the current game. When the
 // vote count reaches the threshold the court is ended automatically. Returns the
 // up-to-date (ended, voteCount) so the caller can broadcast/respond.
-func VoteEndCourt(ctx context.Context, sessionID, courtID, playerID string) (ended bool, count int, err error) {
+func VoteEndCourt(ctx context.Context, sessionID, courtID, playerID string) (ended bool, count int, yes, no []string, err error) {
 	trigger := false
 	err = updateCourt(ctx, sessionID, courtID, func(court *model.Court) error {
 		if !contains(court.Playing, playerID) {
@@ -319,19 +319,29 @@ func VoteEndCourt(ctx context.Context, sessionID, courtID, playerID string) (end
 		}
 		court.EndVotes = votesStillPlaying(court.EndVotes, court.Playing)
 		count = len(court.EndVotes)
-		trigger = count >= EndVoteThreshold
+		if count >= EndVoteThreshold {
+			trigger = true
+			// snapshot who voted yes vs. who was on court but didn't (for the log)
+			yes = append([]string{}, court.EndVotes...)
+			no = no[:0]
+			for _, pid := range normPlaying(court.Playing) {
+				if pid != "" && !contains(court.EndVotes, pid) {
+					no = append(no, pid)
+				}
+			}
+		}
 		return nil
 	})
 	if err != nil {
-		return false, 0, err
+		return false, 0, nil, nil, err
 	}
 	if trigger {
 		if err := EndCourt(ctx, sessionID, courtID); err != nil {
-			return false, count, err
+			return false, count, nil, nil, err
 		}
-		return true, count, nil
+		return true, count, yes, no, nil
 	}
-	return false, count, nil
+	return false, count, nil, nil, nil
 }
 
 func EndCourt(ctx context.Context, sessionID, courtID string) error {

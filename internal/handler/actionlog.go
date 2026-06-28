@@ -48,6 +48,28 @@ func playerName(c *gin.Context, playerID string) string {
 	return playerID
 }
 
+// playerNamesJoined resolves several player_ids to names in one read and joins
+// them with 、 (for log lines like "同意:A、B、C").
+func playerNamesJoined(c *gin.Context, ids []string) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	players, _ := repository.GetSessionPlayers(c.Request.Context(), c.Param("id"))
+	nameOf := make(map[string]string, len(players))
+	for _, p := range players {
+		nameOf[p.PlayerID] = p.DisplayName
+	}
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if n := nameOf[id]; n != "" {
+			names = append(names, n)
+		} else {
+			names = append(names, "?")
+		}
+	}
+	return strings.Join(names, "、")
+}
+
 // courtLabel resolves a court's friendly name (custom name, else "場地 N" parsed
 // from the court-N id) for log readability.
 func courtLabel(c *gin.Context, courtID string) string {
