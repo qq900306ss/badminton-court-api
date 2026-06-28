@@ -44,4 +44,6 @@ type SessionPlayer struct {
 	TotalMinutes int    `dynamodbav:"total_minutes" json:"total_minutes"` // 累積打球分鐘數
 	IsTemp       bool   `dynamodbav:"is_temp" json:"is_temp"`
 	JoinedAt     string `dynamodbav:"joined_at" json:"joined_at"`
+	AccountID    string `dynamodbav:"account_id,omitempty" json:"-"`                    // linked player account (logged-in joins)
+	AvatarURL    string `dynamodbav:"avatar_url,omitempty" json:"avatar_url,omitempty"` // copied from account, for rendering
 }

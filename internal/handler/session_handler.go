@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -99,14 +100,14 @@ func CreateSession(c *gin.Context) {
 	ok(c, gin.H{"session_id": sessionID})
 }
 
-// POST /api/sessions/:id/join  (player entering via QR code)
+// POST /api/sessions/:id/join  (logged-in player joins; RequirePlayer sets player_id)
 func JoinSession(c *gin.Context) {
 	sessionID := c.Param("id")
+	playerID := c.GetString("player_id") // account id from the player JWT
 	var body struct {
 		Password    string `json:"password" binding:"required"`
-		DisplayName string `json:"display_name" binding:"required"`
+		DisplayName string `json:"display_name"`
 		Level       int    `json:"level"`
-		IsTemp      bool   `json:"is_temp"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -126,53 +127,63 @@ func JoinSession(c *gin.Context) {
 		fail(c, http.StatusUnauthorized, "wrong password")
 		return
 	}
-	if utf8.RuneCountInString(body.DisplayName) > maxNameLen {
+
+	name := strings.TrimSpace(body.DisplayName)
+	if utf8.RuneCountInString(name) > maxNameLen {
 		fail(c, http.StatusBadRequest, "名字太長")
 		return
 	}
-
 	level := body.Level
 	if level < 0 || level > 18 {
 		level = 0
 	}
 
-	// claim an existing roster name, or create a new player
-	players, _ := repository.GetSessionPlayers(c.Request.Context(), sessionID)
-	for _, p := range players {
-		if p.DisplayName == body.DisplayName {
-			// the person picking this name claims it + sets their level
-			p.Claimed = true
-			if level > 0 {
-				p.Level = level
+	// avatar + default name come from the account
+	avatar := ""
+	if acc, _ := repository.GetPlayer(c.Request.Context(), playerID); acc != nil {
+		avatar = acc.AvatarURL
+		if name == "" {
+			if name = acc.JoinName; name == "" {
+				name = acc.DisplayName
 			}
-			if err := repository.PutSessionPlayer(c.Request.Context(), p); err != nil {
-				fail(c, http.StatusInternalServerError, err.Error())
-				return
-			}
-			ok(c, gin.H{"player_id": p.PlayerID, "display_name": p.DisplayName})
-			return
 		}
 	}
-	if len(players) >= maxSessionPlayers {
+	if name == "" {
+		name = "球友"
+	}
+
+	// re-join is idempotent: keep this account's accrued stats
+	players, _ := repository.GetSessionPlayers(c.Request.Context(), sessionID)
+	var games, mins int
+	isNew := true
+	for _, ex := range players {
+		if ex.PlayerID == playerID {
+			games, mins, isNew = ex.Games, ex.TotalMinutes, false
+			break
+		}
+	}
+	if isNew && len(players) >= maxSessionPlayers {
 		fail(c, http.StatusBadRequest, "這場人數已達上限")
 		return
 	}
 
-	// new player (typed a name not on the list) — present, so claimed
-	p := model.SessionPlayer{
-		SessionID:   sessionID,
-		PlayerID:    uuid.New().String(),
-		DisplayName: body.DisplayName,
-		Level:       level,
-		Claimed:     true,
-		IsTemp:      body.IsTemp,
-		JoinedAt:    time.Now().UTC().Format(time.RFC3339),
+	sp := model.SessionPlayer{
+		SessionID:    sessionID,
+		PlayerID:     playerID,
+		AccountID:    playerID,
+		DisplayName:  name,
+		Level:        level,
+		Claimed:      true,
+		AvatarURL:    avatar,
+		Games:        games,
+		TotalMinutes: mins,
+		JoinedAt:     time.Now().UTC().Format(time.RFC3339),
 	}
-	if err := repository.PutSessionPlayer(c.Request.Context(), p); err != nil {
+	if err := repository.PutSessionPlayer(c.Request.Context(), sp); err != nil {
 		fail(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	ok(c, gin.H{"player_id": p.PlayerID, "display_name": p.DisplayName})
+	ok(c, gin.H{"player_id": playerID, "display_name": name})
 }
 
 // POST /api/sessions/:id/verify-password  — public, check password up front

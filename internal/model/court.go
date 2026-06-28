@@ -24,6 +24,7 @@ type PlayerSlot struct {
 	DisplayName string `json:"display_name"`
 	Level       int    `json:"level"`
 	Games       int    `json:"games"`
+	AvatarURL   string `json:"avatar_url,omitempty"`
 }
 
 type CourtView struct {

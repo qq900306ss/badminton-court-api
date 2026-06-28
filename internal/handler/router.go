@@ -22,25 +22,26 @@ func NewRouter() *gin.Engine {
 	api.POST("/auth/player/google", PlayerGoogleCallback)
 	api.POST("/auth/player/line", PlayerLineCallback)
 	api.GET("/push/vapid", PushVapid)
-	api.POST("/sessions/:id/push-subscribe", PushSubscribe)
 	api.GET("/sessions/open", ListOpenSessions)
 	api.POST("/sessions/:id/verify-password", VerifyPassword)
-	api.POST("/sessions/:id/join", JoinSession)
 	api.GET("/sessions/:id", GetSession)
 	api.GET("/sessions/:id/players", GetSessionPlayers)
 
-	// player actions (authenticated by player_id header, no JWT needed)
-	courts := api.Group("/sessions/:id/courts/:courtId")
-	courts.POST("/join-playing", JoinPlaying)
-	courts.POST("/join-queue", JoinQueue)
-	courts.POST("/leave-queue", LeaveQueue)
-	courts.POST("/leave-playing", LeavePlaying)
-
-	// drop-in player — player JWT required
+	// drop-in player — player JWT required (X-Player-ID is gone, pure JWT)
 	player := api.Group("/")
 	player.Use(middleware.RequirePlayer())
 	player.GET("/players/me", GetPlayerMe)
 	player.PUT("/players/me", UpdatePlayerMe)
+	player.POST("/sessions/:id/join", JoinSession)
+	player.POST("/sessions/:id/push-subscribe", PushSubscribe)
+
+	// court actions — player JWT required
+	courts := api.Group("/sessions/:id/courts/:courtId")
+	courts.Use(middleware.RequirePlayer())
+	courts.POST("/join-playing", JoinPlaying)
+	courts.POST("/join-queue", JoinQueue)
+	courts.POST("/leave-queue", LeaveQueue)
+	courts.POST("/leave-playing", LeavePlaying)
 
 	// team leader — JWT required
 	leader := api.Group("/")
@@ -65,6 +66,11 @@ func NewRouter() *gin.Engine {
 	leader.POST("/sessions/:id/courts/:courtId/kick", KickPlayer)
 	leader.POST("/sessions/:id/courts/:courtId/add-playing", AdminAddToPlaying)
 	leader.POST("/sessions/:id/courts/:courtId/add-queue", AdminAddToQueue)
+	// on-site seating board (代排) — player rules, leader-authorized
+	leader.POST("/sessions/:id/courts/:courtId/seat-playing", LeaderSeatPlaying)
+	leader.POST("/sessions/:id/courts/:courtId/seat-queue", LeaderSeatQueue)
+	leader.POST("/sessions/:id/courts/:courtId/unseat-playing", LeaderUnseatPlaying)
+	leader.POST("/sessions/:id/courts/:courtId/unseat-queue", LeaderUnseatQueue)
 
 	// superadmin only
 	admin := api.Group("/admin")

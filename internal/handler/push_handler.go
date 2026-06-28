@@ -16,11 +16,7 @@ func PushVapid(c *gin.Context) {
 
 // POST /api/sessions/:id/push-subscribe  (X-Player-ID) — save a push subscription
 func PushSubscribe(c *gin.Context) {
-	playerID := c.GetHeader("X-Player-ID")
-	if playerID == "" {
-		fail(c, http.StatusBadRequest, "missing X-Player-ID header")
-		return
-	}
+	playerID := c.GetString("player_id") // from the player JWT (RequirePlayer)
 	var body struct {
 		Endpoint string `json:"endpoint" binding:"required"`
 		Keys     struct {

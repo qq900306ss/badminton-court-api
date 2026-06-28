@@ -9,11 +9,7 @@ import (
 
 // POST /api/sessions/:id/courts/:courtId/join-playing  { position: 0-3 }
 func JoinPlaying(c *gin.Context) {
-	playerID := c.GetHeader("X-Player-ID")
-	if playerID == "" {
-		fail(c, http.StatusBadRequest, "missing X-Player-ID header")
-		return
-	}
+	playerID := c.GetString("player_id") // set by PlayerIdentity middleware (JWT or legacy header)
 	var body struct {
 		Position int `json:"position"`
 	}
@@ -28,11 +24,7 @@ func JoinPlaying(c *gin.Context) {
 
 // POST /api/sessions/:id/courts/:courtId/join-queue
 func JoinQueue(c *gin.Context) {
-	playerID := c.GetHeader("X-Player-ID")
-	if playerID == "" {
-		fail(c, http.StatusBadRequest, "missing X-Player-ID header")
-		return
-	}
+	playerID := c.GetString("player_id") // set by PlayerIdentity middleware (JWT or legacy header)
 	if err := service.JoinQueue(c.Request.Context(),
 		c.Param("id"), c.Param("courtId"), playerID); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -43,11 +35,7 @@ func JoinQueue(c *gin.Context) {
 
 // POST /api/sessions/:id/courts/:courtId/leave-queue
 func LeaveQueue(c *gin.Context) {
-	playerID := c.GetHeader("X-Player-ID")
-	if playerID == "" {
-		fail(c, http.StatusBadRequest, "missing X-Player-ID header")
-		return
-	}
+	playerID := c.GetString("player_id") // set by PlayerIdentity middleware (JWT or legacy header)
 	if err := service.LeaveQueue(c.Request.Context(),
 		c.Param("id"), c.Param("courtId"), playerID); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -58,17 +46,86 @@ func LeaveQueue(c *gin.Context) {
 
 // POST /api/sessions/:id/courts/:courtId/leave-playing
 func LeavePlaying(c *gin.Context) {
-	playerID := c.GetHeader("X-Player-ID")
-	if playerID == "" {
-		fail(c, http.StatusBadRequest, "missing X-Player-ID header")
-		return
-	}
+	playerID := c.GetString("player_id") // set by PlayerIdentity middleware (JWT or legacy header)
 	if err := service.LeavePlaying(c.Request.Context(),
 		c.Param("id"), c.Param("courtId"), playerID); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	ok(c, gin.H{"left": "playing"})
+}
+
+// --- leader on-site seating board: act on behalf of a player, but with the
+// SAME rules as the player front-end (in-progress courts stay locked). Leader
+// JWT authorizes; the target player comes from the body. ---
+
+// POST /api/sessions/:id/courts/:courtId/seat-playing  (leader)  { player_id, position }
+func LeaderSeatPlaying(c *gin.Context) {
+	var body struct {
+		PlayerID string `json:"player_id" binding:"required"`
+		Position int    `json:"position"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := service.JoinPlaying(c.Request.Context(),
+		c.Param("id"), c.Param("courtId"), body.PlayerID, body.Position); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"seated": "playing"})
+}
+
+// POST /api/sessions/:id/courts/:courtId/seat-queue  (leader)  { player_id }
+func LeaderSeatQueue(c *gin.Context) {
+	var body struct {
+		PlayerID string `json:"player_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := service.JoinQueue(c.Request.Context(),
+		c.Param("id"), c.Param("courtId"), body.PlayerID); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"seated": "queue"})
+}
+
+// POST /api/sessions/:id/courts/:courtId/unseat-playing  (leader)  { player_id }
+func LeaderUnseatPlaying(c *gin.Context) {
+	var body struct {
+		PlayerID string `json:"player_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := service.LeavePlaying(c.Request.Context(),
+		c.Param("id"), c.Param("courtId"), body.PlayerID); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"left": "playing"})
+}
+
+// POST /api/sessions/:id/courts/:courtId/unseat-queue  (leader)  { player_id }
+func LeaderUnseatQueue(c *gin.Context) {
+	var body struct {
+		PlayerID string `json:"player_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := service.LeaveQueue(c.Request.Context(),
+		c.Param("id"), c.Param("courtId"), body.PlayerID); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"left": "queue"})
 }
 
 // POST /api/sessions/:id/courts/:courtId/end  (team leader)

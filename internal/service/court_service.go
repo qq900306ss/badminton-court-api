@@ -423,6 +423,7 @@ func toPlayingSlots(playing []string, playerMap map[string]model.SessionPlayer) 
 			DisplayName: pl.DisplayName,
 			Level:       pl.Level,
 			Games:       pl.Games,
+			AvatarURL:   pl.AvatarURL,
 		}
 	}
 	return slots
@@ -440,6 +441,7 @@ func toSlots(ids []string, playerMap map[string]model.SessionPlayer) []model.Pla
 			DisplayName: p.DisplayName,
 			Level:       p.Level,
 			Games:       p.Games,
+			AvatarURL:   p.AvatarURL,
 		})
 	}
 	return slots
