@@ -86,6 +86,7 @@ func LeaderSeatPlaying(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	logAction(c, "seat_playing", "把「"+playerName(c, body.PlayerID)+"」排上"+courtLabel(c, c.Param("courtId")))
 	ok(c, gin.H{"seated": "playing"})
 }
 
@@ -103,6 +104,7 @@ func LeaderSeatQueue(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	logAction(c, "seat_queue", "把「"+playerName(c, body.PlayerID)+"」排進"+courtLabel(c, c.Param("courtId"))+"的候補")
 	ok(c, gin.H{"seated": "queue"})
 }
 
@@ -121,6 +123,7 @@ func LeaderUnseatPlaying(c *gin.Context) {
 		return
 	}
 	notifyRemoved(c, body.PlayerID, "團主把你移出場上了")
+	logAction(c, "unseat_playing", "把「"+playerName(c, body.PlayerID)+"」移出"+courtLabel(c, c.Param("courtId"))+"場上")
 	ok(c, gin.H{"left": "playing"})
 }
 
@@ -139,16 +142,19 @@ func LeaderUnseatQueue(c *gin.Context) {
 		return
 	}
 	notifyRemoved(c, body.PlayerID, "團主取消了你的排隊")
+	logAction(c, "unseat_queue", "取消「"+playerName(c, body.PlayerID)+"」在"+courtLabel(c, c.Param("courtId"))+"的排隊")
 	ok(c, gin.H{"left": "queue"})
 }
 
 // POST /api/sessions/:id/courts/:courtId/end  (team leader)
 func EndCourt(c *gin.Context) {
+	label := courtLabel(c, c.Param("courtId"))
 	if err := service.EndCourt(c.Request.Context(),
 		c.Param("id"), c.Param("courtId")); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	logAction(c, "end_court", "結束了"+label)
 	ok(c, gin.H{"rotated": true})
 }
 
@@ -159,6 +165,7 @@ func UndoEndCourt(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	logAction(c, "undo_end", "還原了"+courtLabel(c, c.Param("courtId"))+"的結束")
 	ok(c, gin.H{"undone": true})
 }
 
@@ -177,6 +184,7 @@ func KickPlayer(c *gin.Context) {
 		return
 	}
 	notifyRemoved(c, body.PlayerID, "團主把你移出場地了")
+	logAction(c, "kick", "把「"+playerName(c, body.PlayerID)+"」踢出"+courtLabel(c, c.Param("courtId")))
 	ok(c, gin.H{"kicked": true})
 }
 
@@ -194,6 +202,7 @@ func AdminAddToPlaying(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	logAction(c, "seat_playing", "把「"+playerName(c, body.PlayerID)+"」排上"+courtLabel(c, c.Param("courtId")))
 	ok(c, gin.H{"added": "playing"})
 }
 
@@ -211,5 +220,6 @@ func AdminAddToQueue(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	logAction(c, "seat_queue", "把「"+playerName(c, body.PlayerID)+"」排進"+courtLabel(c, c.Param("courtId"))+"的候補")
 	ok(c, gin.H{"added": "queue"})
 }

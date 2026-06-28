@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -267,15 +268,18 @@ func AddSessionPlayer(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	logAction(c, "add_player", "新增了臨時人員「"+body.DisplayName+"」")
 	ok(c, p)
 }
 
 // DELETE /api/sessions/:id/players/:playerId  — leader removes a person from the session
 func RemoveSessionPlayer(c *gin.Context) {
+	name := playerName(c, c.Param("playerId"))
 	if err := service.RemoveSessionPlayer(c.Request.Context(), c.Param("id"), c.Param("playerId")); err != nil {
 		fail(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	logAction(c, "remove_player", "把「"+name+"」移出本場")
 	ok(c, gin.H{"removed": true})
 }
 
@@ -306,6 +310,11 @@ func UpdatePlayerLevel(c *gin.Context) {
 			if err := repository.PutSessionPlayer(c.Request.Context(), p); err != nil {
 				fail(c, http.StatusInternalServerError, err.Error())
 				return
+			}
+			if body.Level > 0 {
+				logAction(c, "level", "把「"+p.DisplayName+"」程度設為 "+strconv.Itoa(body.Level))
+			} else {
+				logAction(c, "level", "清除了「"+p.DisplayName+"」的程度")
 			}
 			ok(c, p)
 			return
@@ -362,11 +371,13 @@ func SetSessionPlayerName(c *gin.Context) {
 		fail(c, http.StatusNotFound, "找不到此人")
 		return
 	}
+	oldName := found.DisplayName
 	found.DisplayName = name
 	if err := repository.PutSessionPlayer(c.Request.Context(), *found); err != nil {
 		fail(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	logAction(c, "rename", "把「"+oldName+"」改名為「"+name+"」")
 	msg := "團主把你的名稱改成「" + name + "」"
 	realtime.Default.Broadcast(sid, []byte(fmt.Sprintf(`{"t":"renamed","player":%q,"msg":%q}`, playerID, msg)))
 	go service.SendTurnPush(context.Background(), playerID, msg)
@@ -395,6 +406,11 @@ func SetSessionPlayerPaid(c *gin.Context) {
 			if err := repository.PutSessionPlayer(c.Request.Context(), p); err != nil {
 				fail(c, http.StatusInternalServerError, err.Error())
 				return
+			}
+			if body.Paid {
+				logAction(c, "paid", "標記「"+p.DisplayName+"」已收臨打費")
+			} else {
+				logAction(c, "unpaid", "把「"+p.DisplayName+"」改回未收臨打費")
 			}
 			ok(c, p)
 			return

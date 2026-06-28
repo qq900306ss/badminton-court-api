@@ -37,7 +37,31 @@ func Init(ctx context.Context) error {
 	ensureTables(ctx)
 	ensureSessionStatusGSI(ctx)
 	ensurePlayersTable(ctx)
+	ensureActionLogTTL(ctx)
 	return nil
+}
+
+// ensureActionLogTTL turns on DynamoDB TTL for the action-logs table so old
+// rows (expires_at < now) are auto-deleted (~90 day retention). Idempotent.
+func ensureActionLogTTL(ctx context.Context) {
+	tbl := TableName("action-logs")
+	desc, err := client.DescribeTimeToLive(ctx, &dynamodb.DescribeTimeToLiveInput{TableName: aws.String(tbl)})
+	if err == nil && desc.TimeToLiveDescription != nil {
+		st := desc.TimeToLiveDescription.TimeToLiveStatus
+		if st == types.TimeToLiveStatusEnabled || st == types.TimeToLiveStatusEnabling {
+			return // already on
+		}
+	}
+	_, err = client.UpdateTimeToLive(ctx, &dynamodb.UpdateTimeToLiveInput{
+		TableName: aws.String(tbl),
+		TimeToLiveSpecification: &types.TimeToLiveSpecification{
+			Enabled:       aws.Bool(true),
+			AttributeName: aws.String("expires_at"),
+		},
+	})
+	if err != nil {
+		log.Printf("ensureActionLogTTL: %v", err)
+	}
 }
 
 // ensureSessionStatusGSI adds a status GSI to the sessions table (idempotent,
@@ -97,6 +121,7 @@ func ensureTables(ctx context.Context) {
 		{"session-history", "org_id", "closed_at_session"},
 		{"game-logs", "session_id", "ended_at_id"},
 		{"push-subscriptions", "player_id", ""},
+		{"action-logs", "session_id", "ts_id"},
 	}
 
 	for _, t := range tables {
