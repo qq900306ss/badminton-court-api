@@ -44,6 +44,7 @@ type SessionPlayer struct {
 	Claimed      bool   `dynamodbav:"claimed" json:"claimed"`             // true once a real person has picked this identity
 	Games        int    `dynamodbav:"games" json:"games"`                 // 打過幾場(每次該球場結束 +1)
 	TotalMinutes int    `dynamodbav:"total_minutes" json:"total_minutes"` // 累積打球分鐘數
+	Paid         bool   `dynamodbav:"paid" json:"paid"`                   // 團主標記是否已付場地費
 	IsTemp       bool   `dynamodbav:"is_temp" json:"is_temp"`
 	JoinedAt     string `dynamodbav:"joined_at" json:"joined_at"`
 	AccountID    string `dynamodbav:"account_id,omitempty" json:"-"`                    // linked player account (logged-in joins)

@@ -373,6 +373,36 @@ func SetSessionPlayerName(c *gin.Context) {
 	ok(c, found)
 }
 
+// SetSessionPlayerPaid marks (or un-marks) whether a player has paid the court fee.
+func SetSessionPlayerPaid(c *gin.Context) {
+	sid := c.Param("id")
+	playerID := c.Param("playerId")
+	var body struct {
+		Paid bool `json:"paid"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	players, err := repository.GetSessionPlayers(c.Request.Context(), sid)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, p := range players {
+		if p.PlayerID == playerID {
+			p.Paid = body.Paid
+			if err := repository.PutSessionPlayer(c.Request.Context(), p); err != nil {
+				fail(c, http.StatusInternalServerError, err.Error())
+				return
+			}
+			ok(c, p)
+			return
+		}
+	}
+	fail(c, http.StatusNotFound, "找不到此人")
+}
+
 func toSummary(s model.Session) model.SessionSummary {
 	city, district := s.City, s.District
 	if city == "" {
