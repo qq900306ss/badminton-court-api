@@ -34,10 +34,24 @@ func logAction(c *gin.Context, action, detail string) {
 	}()
 }
 
+// sessionPlayersCached fetches the session's players once per request and reuses
+// the result — several log helpers need names in the same request, so this
+// avoids 2-3 duplicate DynamoDB reads just to build one log line.
+func sessionPlayersCached(c *gin.Context) []model.SessionPlayer {
+	const key = "_session_players_cache"
+	if v, ok := c.Get(key); ok {
+		if players, ok := v.([]model.SessionPlayer); ok {
+			return players
+		}
+	}
+	players, _ := repository.GetSessionPlayers(c.Request.Context(), c.Param("id"))
+	c.Set(key, players)
+	return players
+}
+
 // playerName resolves a session-player's display name for log readability.
 func playerName(c *gin.Context, playerID string) string {
-	players, _ := repository.GetSessionPlayers(c.Request.Context(), c.Param("id"))
-	for _, p := range players {
+	for _, p := range sessionPlayersCached(c) {
 		if p.PlayerID == playerID {
 			return p.DisplayName
 		}
@@ -54,7 +68,7 @@ func playerNamesJoined(c *gin.Context, ids []string) string {
 	if len(ids) == 0 {
 		return ""
 	}
-	players, _ := repository.GetSessionPlayers(c.Request.Context(), c.Param("id"))
+	players := sessionPlayersCached(c)
 	nameOf := make(map[string]string, len(players))
 	for _, p := range players {
 		nameOf[p.PlayerID] = p.DisplayName

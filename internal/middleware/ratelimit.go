@@ -35,12 +35,19 @@ func (l *limiter) allow(ip string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// crude unbounded-growth guard
+	now := time.Now()
+
+	// unbounded-growth guard: evict only EXPIRED windows, never wipe the whole
+	// map — a full reset would hand every active client a fresh burst at once
+	// (and let a many-IP flood bypass the limiter by repeatedly triggering it).
 	if len(l.hits) > 20000 {
-		l.hits = make(map[string]*window)
+		for k, v := range l.hits {
+			if now.Sub(v.start) > l.windowD {
+				delete(l.hits, k)
+			}
+		}
 	}
 
-	now := time.Now()
 	w, ok := l.hits[ip]
 	if !ok || now.Sub(w.start) > l.windowD {
 		l.hits[ip] = &window{count: 1, start: now}

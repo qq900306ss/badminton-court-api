@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -16,6 +17,16 @@ import (
 
 // maxFamilyPerOwner caps how many family members one phone can bring (anti-abuse).
 const maxFamilyPerOwner = 5
+
+// familyAddLocks serialises concurrent AddFamilyMember calls per (session,owner)
+// so the count-check-then-write can't be raced past maxFamilyPerOwner. Safe
+// because the server runs as a single machine (same constraint as the WS hub).
+var familyAddLocks sync.Map
+
+func familyAddLock(key string) *sync.Mutex {
+	m, _ := familyAddLocks.LoadOrStore(key, &sync.Mutex{})
+	return m.(*sync.Mutex)
+}
 
 // AddFamilyMember lets a logged-in player bring a family member who shares this
 // phone. It becomes a session-player owned by the caller, pending leader approval.
@@ -45,6 +56,12 @@ func AddFamilyMember(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "頭像資料過長")
 		return
 	}
+
+	// serialise per (session, owner) so two near-simultaneous adds can't both
+	// pass the count check and exceed maxFamilyPerOwner
+	lk := familyAddLock(sid + "|" + owner)
+	lk.Lock()
+	defer lk.Unlock()
 
 	existing, _ := repository.GetSessionPlayers(c.Request.Context(), sid)
 	family := 0

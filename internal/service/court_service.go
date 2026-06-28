@@ -380,18 +380,31 @@ func EndCourt(ctx context.Context, sessionID, courtID string) error {
 // UndoEndCourt reverses the last 結束場地 on a court (within 10 min): restores the
 // players, queue and 開打計時, and rolls back the credited games / GameLog.
 func UndoEndCourt(ctx context.Context, sessionID, courtID string) error {
-	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	// Atomically CLAIM the undo: validate + restore the court + clear LastEnd in a
+	// single optimistic-lock transaction. A concurrent or double-tapped second
+	// undo then re-reads LastEnd == nil and bails out here — so the credit
+	// reversal below runs exactly once and can't zero out stats twice.
+	var snap *model.EndSnapshot
+	err := updateCourt(ctx, sessionID, courtID, func(c *model.Court) error {
+		if c.LastEnd == nil {
+			return fmt.Errorf("沒有可復原的結束")
+		}
+		if t, e := time.Parse(time.RFC3339, c.LastEnd.EndedAt); e == nil && time.Since(t) > 10*time.Minute {
+			return fmt.Errorf("超過可復原時間(10 分鐘)")
+		}
+		snap = c.LastEnd
+		c.Playing = normPlaying(snap.Playing)
+		c.Queue = append([]string{}, snap.Queue...)
+		c.StartedAt = snap.StartedAt
+		c.LastEnd = nil // claim — second undo sees nil and returns the error above
+		recomputeStatus(c)
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-	snap := court.LastEnd
-	if snap == nil {
-		return fmt.Errorf("沒有可復原的結束")
-	}
-	if t, e := time.Parse(time.RFC3339, snap.EndedAt); e == nil && time.Since(t) > 10*time.Minute {
-		return fmt.Errorf("超過可復原時間(10 分鐘)")
-	}
-	// reverse the credit applied at end time
+	// reverse the credit applied at end time (runs once — only the caller that
+	// committed the claim reaches here with a non-nil snap)
 	players, _ := repository.GetSessionPlayers(ctx, sessionID)
 	pm := make(map[string]model.SessionPlayer, len(players))
 	for _, p := range players {
@@ -409,15 +422,7 @@ func UndoEndCourt(ctx context.Context, sessionID, courtID string) error {
 		}
 	}
 	_ = repository.DeleteGameLog(ctx, sessionID, snap.GameLogID)
-	// restore the court (one-shot: clear LastEnd)
-	return updateCourt(ctx, sessionID, courtID, func(c *model.Court) error {
-		c.Playing = normPlaying(snap.Playing)
-		c.Queue = append([]string{}, snap.Queue...)
-		c.StartedAt = snap.StartedAt
-		c.LastEnd = nil
-		recomputeStatus(c)
-		return nil
-	})
+	return nil
 }
 
 // RenameCourt sets a court's custom name (leader)
