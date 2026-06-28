@@ -1,11 +1,17 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/qq900306ss/badminton-court-api/internal/service"
 )
+
+// notifyRemoved sends a best-effort push to a player the leader just removed.
+func notifyRemoved(playerID, msg string) {
+	go service.SendTurnPush(context.Background(), playerID, msg)
+}
 
 // POST /api/sessions/:id/courts/:courtId/join-playing  { position: 0-3 }
 func JoinPlaying(c *gin.Context) {
@@ -108,6 +114,7 @@ func LeaderUnseatPlaying(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	notifyRemoved(body.PlayerID, "團主把你移出場上了")
 	ok(c, gin.H{"left": "playing"})
 }
 
@@ -125,6 +132,7 @@ func LeaderUnseatQueue(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	notifyRemoved(body.PlayerID, "團主取消了你的排隊")
 	ok(c, gin.H{"left": "queue"})
 }
 
@@ -152,6 +160,7 @@ func KickPlayer(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	notifyRemoved(body.PlayerID, "團主把你移出場地了")
 	ok(c, gin.H{"kicked": true})
 }
 
