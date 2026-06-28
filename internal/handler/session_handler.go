@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/qq900306ss/badminton-court-api/internal/model"
+	"github.com/qq900306ss/badminton-court-api/internal/realtime"
 	"github.com/qq900306ss/badminton-court-api/internal/repository"
 	"github.com/qq900306ss/badminton-court-api/internal/service"
 	"golang.org/x/crypto/bcrypt"
@@ -330,6 +332,45 @@ func GetSessionPlayers(c *gin.Context) {
 		return
 	}
 	ok(c, players)
+}
+
+// POST /api/sessions/:id/players/:playerId/name  (leader) { name } — rename a player this session
+func SetSessionPlayerName(c *gin.Context) {
+	sid := c.Param("id")
+	playerID := c.Param("playerId")
+	var body struct {
+		Name string `json:"name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" || utf8.RuneCountInString(name) > maxNameLen {
+		fail(c, http.StatusBadRequest, "名字長度不符")
+		return
+	}
+	players, _ := repository.GetSessionPlayers(c.Request.Context(), sid)
+	var found *model.SessionPlayer
+	for i := range players {
+		if players[i].PlayerID == playerID {
+			found = &players[i]
+			break
+		}
+	}
+	if found == nil {
+		fail(c, http.StatusNotFound, "找不到此人")
+		return
+	}
+	found.DisplayName = name
+	if err := repository.PutSessionPlayer(c.Request.Context(), *found); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	msg := "團主把你的名稱改成「" + name + "」"
+	realtime.Default.Broadcast(sid, []byte(fmt.Sprintf(`{"t":"renamed","player":%q,"msg":%q}`, playerID, msg)))
+	go service.SendTurnPush(context.Background(), playerID, msg)
+	ok(c, found)
 }
 
 func toSummary(s model.Session) model.SessionSummary {
