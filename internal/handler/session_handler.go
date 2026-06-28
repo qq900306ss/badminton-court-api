@@ -235,6 +235,7 @@ func AddSessionPlayer(c *gin.Context) {
 	sessionID := c.Param("id")
 	var body struct {
 		DisplayName string `json:"display_name" binding:"required"`
+		Level       int    `json:"level"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -242,6 +243,10 @@ func AddSessionPlayer(c *gin.Context) {
 	}
 	if utf8.RuneCountInString(body.DisplayName) > maxNameLen {
 		fail(c, http.StatusBadRequest, "名字太長")
+		return
+	}
+	if body.Level < 0 || body.Level > 18 {
+		fail(c, http.StatusBadRequest, "level 必須 0-18")
 		return
 	}
 
@@ -261,7 +266,9 @@ func AddSessionPlayer(c *gin.Context) {
 		SessionID:   sessionID,
 		PlayerID:    uuid.New().String(),
 		DisplayName: body.DisplayName,
-		IsTemp:      false,
+		Level:       body.Level,
+		Claimed:     true, // 團主當場加的人就在現場 → 直接標已到
+		IsTemp:      true, // 無帳號的臨時人員
 		JoinedAt:    time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := repository.PutSessionPlayer(c.Request.Context(), p); err != nil {
