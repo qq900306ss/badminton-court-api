@@ -14,6 +14,7 @@ type Court struct {
 	Status    CourtStatus `dynamodbav:"status" json:"status"`
 	Playing   []string    `dynamodbav:"playing" json:"playing"` // player_ids, max 4
 	Queue     []string    `dynamodbav:"queue" json:"queue"`     // player_ids, max 4
+	EndVotes  []string    `dynamodbav:"end_votes,omitempty" json:"-"` // player_ids who voted to end this game
 	StartedAt string      `dynamodbav:"started_at,omitempty" json:"started_at,omitempty"`
 	Version   int         `dynamodbav:"version" json:"-"`              // optimistic lock; bumped on every write
 	LastEnd   *EndSnapshot `dynamodbav:"last_end,omitempty" json:"-"` // for undo of the last 結束場地
@@ -49,6 +50,8 @@ type CourtView struct {
 	Queue     []PlayerSlot `json:"queue"`
 	StartedAt string       `json:"started_at,omitempty"` // 湊滿開打的時間
 	CanUndo   bool         `json:"can_undo,omitempty"`   // a recent 結束場地 is still undoable
+	EndVotes  []string     `json:"end_votes,omitempty"`  // player_ids who voted to end (only those still playing)
+	EndVotesNeeded int     `json:"end_votes_needed,omitempty"` // votes required to auto-end
 }
 
 type SessionView struct {

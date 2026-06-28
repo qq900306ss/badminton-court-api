@@ -67,6 +67,19 @@ func LeavePlaying(c *gin.Context) {
 	ok(c, gin.H{"left": "playing"})
 }
 
+// POST /api/sessions/:id/courts/:courtId/vote-end  (player on court)
+// Toggles the caller's vote to end the current game; auto-ends at the threshold.
+func VoteEndCourt(c *gin.Context) {
+	playerID := c.GetString("player_id")
+	ended, count, err := service.VoteEndCourt(c.Request.Context(),
+		c.Param("id"), c.Param("courtId"), playerID)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ok(c, gin.H{"ended": ended, "votes": count, "needed": service.EndVoteThreshold})
+}
+
 // --- leader on-site seating board: act on behalf of a player, but with the
 // SAME rules as the player front-end (in-progress courts stay locked). Leader
 // JWT authorizes; the target player comes from the body. ---

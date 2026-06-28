@@ -45,6 +45,7 @@ func NewRouter() *gin.Engine {
 	courts.POST("/join-queue", JoinQueue)
 	courts.POST("/leave-queue", LeaveQueue)
 	courts.POST("/leave-playing", LeavePlaying)
+	courts.POST("/vote-end", VoteEndCourt)
 
 	// team leader — JWT required
 	leader := api.Group("/")

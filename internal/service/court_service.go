@@ -40,15 +40,18 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 				canUndo = true
 			}
 		}
+		votes := votesStillPlaying(c.EndVotes, c.Playing)
 		cv := model.CourtView{
-			CourtID:   c.CourtID,
-			CourtNum:  courtNum(c.CourtID),
-			Name:      c.Name,
-			Status:    c.Status,
-			Playing:   toPlayingSlots(c.Playing, playerMap),
-			Queue:     toSlots(c.Queue, playerMap),
-			StartedAt: c.StartedAt,
-			CanUndo:   canUndo,
+			CourtID:        c.CourtID,
+			CourtNum:       courtNum(c.CourtID),
+			Name:           c.Name,
+			Status:         c.Status,
+			Playing:        toPlayingSlots(c.Playing, playerMap),
+			Queue:          toSlots(c.Queue, playerMap),
+			StartedAt:      c.StartedAt,
+			CanUndo:        canUndo,
+			EndVotes:       votes,
+			EndVotesNeeded: EndVoteThreshold,
 		}
 		views = append(views, cv)
 	}
@@ -277,6 +280,60 @@ func nonEmptyIDs(p []string) []string {
 
 // EndCourt rotates: playing → cleared, queue → playing.
 // Everyone who was playing gets credited one game.
+// EndVoteThreshold is how many on-court players must vote before a game
+// auto-ends (so players can end a finished game without bugging the leader).
+const EndVoteThreshold = 3
+
+// votesStillPlaying keeps only the votes cast by players who are currently on
+// the court (a voter who left / got moved no longer counts).
+func votesStillPlaying(votes, playing []string) []string {
+	if len(votes) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(votes))
+	for _, v := range votes {
+		if contains(playing, v) {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// VoteEndCourt toggles a playing player's vote to end the current game. When the
+// vote count reaches the threshold the court is ended automatically. Returns the
+// up-to-date (ended, voteCount) so the caller can broadcast/respond.
+func VoteEndCourt(ctx context.Context, sessionID, courtID, playerID string) (ended bool, count int, err error) {
+	trigger := false
+	err = updateCourt(ctx, sessionID, courtID, func(court *model.Court) error {
+		if !contains(court.Playing, playerID) {
+			return fmt.Errorf("只有場上的人可以投票結束")
+		}
+		if playingCount(court.Playing) < 4 {
+			return fmt.Errorf("湊滿四人開打後才能投票結束")
+		}
+		// toggle this player's vote, then drop any stale votes (people who left)
+		if contains(court.EndVotes, playerID) {
+			court.EndVotes = remove(court.EndVotes, playerID)
+		} else {
+			court.EndVotes = append(court.EndVotes, playerID)
+		}
+		court.EndVotes = votesStillPlaying(court.EndVotes, court.Playing)
+		count = len(court.EndVotes)
+		trigger = count >= EndVoteThreshold
+		return nil
+	})
+	if err != nil {
+		return false, 0, err
+	}
+	if trigger {
+		if err := EndCourt(ctx, sessionID, courtID); err != nil {
+			return false, count, err
+		}
+		return true, count, nil
+	}
+	return false, count, nil
+}
+
 func EndCourt(ctx context.Context, sessionID, courtID string) error {
 	// snapshot of who was playing (for crediting) + the post-rotation court, both
 	// captured on the attempt that actually commits — so a concurrent write that
@@ -298,6 +355,7 @@ func EndCourt(ctx context.Context, sessionID, courtID string) error {
 		}
 		court.Playing = make([]string, 4) // 清空場上
 		court.StartedAt = ""
+		court.EndVotes = nil // 新的一場,清空結束投票
 		promoted = fillFromQueue(court) // 換排隊的人上場(缺幾補幾)
 		return nil
 	})
