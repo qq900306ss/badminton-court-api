@@ -39,6 +39,7 @@ func NewRouter() *gin.Engine {
 	player.POST("/sessions/:id/push-subscribe", PushSubscribe)
 	player.POST("/sessions/:id/family", AddFamilyMember)
 	player.DELETE("/sessions/:id/family/:playerId", RemoveFamilyMember)
+	player.POST("/feedback", SubmitPlayerFeedback)
 
 	// court actions — player JWT required
 	courts := api.Group("/sessions/:id/courts/:courtId")
@@ -54,6 +55,7 @@ func NewRouter() *gin.Engine {
 	leader.Use(middleware.RequireAuth())
 	leader.GET("/auth/me", GetMe)
 	leader.GET("/my/sessions", ListMySessions)
+	leader.POST("/my/feedback", SubmitLeaderFeedback)
 	leader.GET("/sessions/:id/games", ListGames)
 	leader.GET("/sessions/:id/action-logs", ListSessionActionLogs)
 	leader.POST("/sessions", CreateSession)
@@ -90,6 +92,7 @@ func NewRouter() *gin.Engine {
 	admin.POST("/orgs/:orgId/disabled", AdminSetOrgDisabled)
 	admin.POST("/impersonate/:orgId", AdminImpersonate)
 	admin.GET("/sessions", AdminListSessions)
+	admin.GET("/feedback", AdminListFeedback)
 
 	return r
 }
