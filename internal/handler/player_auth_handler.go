@@ -93,8 +93,14 @@ func findOrCreatePlayer(ctx context.Context, provider, sub, name, avatar, email 
 			existing.DisplayName = name
 			changed = true
 		}
-		if avatar != "" && existing.AvatarURL != avatar {
-			existing.AvatarURL = avatar
+		// refresh the provider photo, but DON'T touch AvatarURL — that's the
+		// user's choice (they may have set a custom emoji avatar).
+		if avatar != "" && existing.PhotoURL != avatar {
+			existing.PhotoURL = avatar
+			changed = true
+		}
+		if existing.AvatarURL == "" && avatar != "" {
+			existing.AvatarURL = avatar // legacy account had no avatar yet
 			changed = true
 		}
 		if email != "" && existing.Email != email {
@@ -114,6 +120,7 @@ func findOrCreatePlayer(ctx context.Context, provider, sub, name, avatar, email 
 		DisplayName: name,
 		JoinName:    name,
 		AvatarURL:   avatar,
+		PhotoURL:    avatar,
 		Email:       email,
 		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
 	}
@@ -144,6 +151,7 @@ func UpdatePlayerMe(c *gin.Context) {
 	var body struct {
 		JoinName     string `json:"join_name"`
 		DefaultLevel int    `json:"default_level"`
+		AvatarURL    string `json:"avatar_url"` // chosen emoji or the provider photo URL
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -166,6 +174,9 @@ func UpdatePlayerMe(c *gin.Context) {
 	p.JoinName = name
 	if lvl := body.DefaultLevel; lvl >= 0 && lvl <= 18 {
 		p.DefaultLevel = lvl
+	}
+	if a := strings.TrimSpace(body.AvatarURL); a != "" && utf8.RuneCountInString(a) <= 300 {
+		p.AvatarURL = a
 	}
 	if err := repository.PutPlayer(c.Request.Context(), *p); err != nil {
 		fail(c, http.StatusInternalServerError, err.Error())

@@ -10,7 +10,8 @@ type Player struct {
 	DisplayName string `dynamodbav:"display_name" json:"display_name"`       // name from the provider
 	JoinName     string `dynamodbav:"join_name,omitempty" json:"join_name"`         // preferred 加入臨打團名稱 (defaults to DisplayName)
 	DefaultLevel int    `dynamodbav:"default_level,omitempty" json:"default_level"` // preferred 級數, pre-filled at join
-	AvatarURL   string `dynamodbav:"avatar_url,omitempty" json:"avatar_url,omitempty"`
+	AvatarURL   string `dynamodbav:"avatar_url,omitempty" json:"avatar_url,omitempty"` // effective avatar: a photo URL or a chosen emoji
+	PhotoURL    string `dynamodbav:"photo_url,omitempty" json:"photo_url,omitempty"`   // original provider photo (so they can switch back)
 	Email       string `dynamodbav:"email,omitempty" json:"email,omitempty"` // superadmin-only — never put in PlayerSlot
 	CreatedAt   string `dynamodbav:"created_at" json:"created_at"`
 }
