@@ -37,6 +37,8 @@ func NewRouter() *gin.Engine {
 	player.POST("/players/me/avatar-upload-url", AvatarUploadURL)
 	player.POST("/sessions/:id/join", JoinSession)
 	player.POST("/sessions/:id/push-subscribe", PushSubscribe)
+	player.POST("/sessions/:id/family", AddFamilyMember)
+	player.DELETE("/sessions/:id/family/:playerId", RemoveFamilyMember)
 
 	// court actions — player JWT required
 	courts := api.Group("/sessions/:id/courts/:courtId")
@@ -59,6 +61,7 @@ func NewRouter() *gin.Engine {
 	leader.POST("/sessions/:id/players/:playerId/level", UpdatePlayerLevel)
 	leader.POST("/sessions/:id/players/:playerId/name", SetSessionPlayerName)
 	leader.POST("/sessions/:id/players/:playerId/paid", SetSessionPlayerPaid)
+	leader.POST("/sessions/:id/players/:playerId/approve", ApproveFamilyMember)
 	leader.DELETE("/sessions/:id/players/:playerId", RemoveSessionPlayer)
 	leader.POST("/sessions/:id/close", CloseSession)
 	leader.GET("/sessions/:id/password", GetSessionPassword)

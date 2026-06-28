@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/qq900306ss/badminton-court-api/internal/realtime"
+	"github.com/qq900306ss/badminton-court-api/internal/repository"
 	"github.com/qq900306ss/badminton-court-api/internal/service"
 )
 
@@ -19,13 +20,42 @@ func notifyRemoved(c *gin.Context, playerID, msg string) {
 		[]byte(fmt.Sprintf(`{"t":"removed","player":%q,"msg":%q}`, playerID, msg)))
 }
 
+// actingPlayer resolves who a court action is performed as. By default it's the
+// caller themselves; a phone may also act as one of its own (approved) family
+// members by passing as_player. Ownership + approval are enforced server-side so
+// nobody can forge as_player to control someone else.
+func actingPlayer(c *gin.Context, asPlayer string) (string, error) {
+	self := c.GetString("player_id")
+	if asPlayer == "" || asPlayer == self {
+		return self, nil
+	}
+	players, _ := repository.GetSessionPlayers(c.Request.Context(), c.Param("id"))
+	for _, p := range players {
+		if p.PlayerID == asPlayer {
+			if p.OwnerID != self {
+				return "", fmt.Errorf("無權操作這個人")
+			}
+			if p.Pending {
+				return "", fmt.Errorf("家人還沒被團主核准")
+			}
+			return asPlayer, nil
+		}
+	}
+	return "", fmt.Errorf("找不到這個人")
+}
+
 // POST /api/sessions/:id/courts/:courtId/join-playing  { position: 0-3 }
 func JoinPlaying(c *gin.Context) {
-	playerID := c.GetString("player_id") // set by PlayerIdentity middleware (JWT or legacy header)
 	var body struct {
-		Position int `json:"position"`
+		Position int    `json:"position"`
+		AsPlayer string `json:"as_player"` // optional: act as one of my family members
 	}
 	_ = c.ShouldBindJSON(&body) // default 0 if absent
+	playerID, err := actingPlayer(c, body.AsPlayer)
+	if err != nil {
+		fail(c, http.StatusForbidden, err.Error())
+		return
+	}
 	if err := service.JoinPlaying(c.Request.Context(),
 		c.Param("id"), c.Param("courtId"), playerID, body.Position); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -36,7 +66,15 @@ func JoinPlaying(c *gin.Context) {
 
 // POST /api/sessions/:id/courts/:courtId/join-queue
 func JoinQueue(c *gin.Context) {
-	playerID := c.GetString("player_id") // set by PlayerIdentity middleware (JWT or legacy header)
+	var body struct {
+		AsPlayer string `json:"as_player"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	playerID, err := actingPlayer(c, body.AsPlayer)
+	if err != nil {
+		fail(c, http.StatusForbidden, err.Error())
+		return
+	}
 	if err := service.JoinQueue(c.Request.Context(),
 		c.Param("id"), c.Param("courtId"), playerID); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -47,7 +85,15 @@ func JoinQueue(c *gin.Context) {
 
 // POST /api/sessions/:id/courts/:courtId/leave-queue
 func LeaveQueue(c *gin.Context) {
-	playerID := c.GetString("player_id") // set by PlayerIdentity middleware (JWT or legacy header)
+	var body struct {
+		AsPlayer string `json:"as_player"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	playerID, err := actingPlayer(c, body.AsPlayer)
+	if err != nil {
+		fail(c, http.StatusForbidden, err.Error())
+		return
+	}
 	if err := service.LeaveQueue(c.Request.Context(),
 		c.Param("id"), c.Param("courtId"), playerID); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -58,7 +104,15 @@ func LeaveQueue(c *gin.Context) {
 
 // POST /api/sessions/:id/courts/:courtId/leave-playing
 func LeavePlaying(c *gin.Context) {
-	playerID := c.GetString("player_id") // set by PlayerIdentity middleware (JWT or legacy header)
+	var body struct {
+		AsPlayer string `json:"as_player"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	playerID, err := actingPlayer(c, body.AsPlayer)
+	if err != nil {
+		fail(c, http.StatusForbidden, err.Error())
+		return
+	}
 	if err := service.LeavePlaying(c.Request.Context(),
 		c.Param("id"), c.Param("courtId"), playerID); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -70,7 +124,15 @@ func LeavePlaying(c *gin.Context) {
 // POST /api/sessions/:id/courts/:courtId/vote-end  (player on court)
 // Toggles the caller's vote to end the current game; auto-ends at the threshold.
 func VoteEndCourt(c *gin.Context) {
-	playerID := c.GetString("player_id")
+	var body struct {
+		AsPlayer string `json:"as_player"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	playerID, err := actingPlayer(c, body.AsPlayer)
+	if err != nil {
+		fail(c, http.StatusForbidden, err.Error())
+		return
+	}
 	ended, count, yes, no, err := service.VoteEndCourt(c.Request.Context(),
 		c.Param("id"), c.Param("courtId"), playerID)
 	if err != nil {
