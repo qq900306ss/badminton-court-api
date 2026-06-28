@@ -22,8 +22,10 @@ type googleTokenResponse struct {
 }
 
 type googleUserInfo struct {
-	Email string `json:"email"`
-	Name  string `json:"name"`
+	Id      string `json:"id"`
+	Email   string `json:"email"`
+	Name    string `json:"name"`
+	Picture string `json:"picture"`
 }
 
 // POST /api/auth/google  { code: "..." }
@@ -98,9 +100,14 @@ func GetMe(c *gin.Context) {
 }
 
 func exchangeGoogleCode(code string) (*googleUserInfo, error) {
+	return exchangeGoogleCodeWith(code, os.Getenv("GOOGLE_REDIRECT_URI"))
+}
+
+// exchangeGoogleCodeWith exchanges an auth code using a specific redirect_uri,
+// so leaders (admin callback) and players (booking callback) can share the flow.
+func exchangeGoogleCodeWith(code, redirectURI string) (*googleUserInfo, error) {
 	clientID := os.Getenv("GOOGLE_CLIENT_ID")
 	clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
-	redirectURI := os.Getenv("GOOGLE_REDIRECT_URI")
 
 	resp, err := http.PostForm("https://oauth2.googleapis.com/token", map[string][]string{
 		"code":          {code},

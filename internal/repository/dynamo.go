@@ -33,6 +33,7 @@ func Init(ctx context.Context) error {
 	// Errors are logged so they surface in CloudWatch and via /health.
 	ensureTables(ctx)
 	ensureSessionStatusGSI(ctx)
+	ensurePlayersTable(ctx)
 	return nil
 }
 

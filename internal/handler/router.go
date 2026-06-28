@@ -19,6 +19,8 @@ func NewRouter() *gin.Engine {
 
 	// public — no auth
 	api.POST("/auth/google", GoogleCallback)
+	api.POST("/auth/player/google", PlayerGoogleCallback)
+	api.POST("/auth/player/line", PlayerLineCallback)
 	api.GET("/push/vapid", PushVapid)
 	api.POST("/sessions/:id/push-subscribe", PushSubscribe)
 	api.GET("/sessions/open", ListOpenSessions)
@@ -33,6 +35,12 @@ func NewRouter() *gin.Engine {
 	courts.POST("/join-queue", JoinQueue)
 	courts.POST("/leave-queue", LeaveQueue)
 	courts.POST("/leave-playing", LeavePlaying)
+
+	// drop-in player — player JWT required
+	player := api.Group("/")
+	player.Use(middleware.RequirePlayer())
+	player.GET("/players/me", GetPlayerMe)
+	player.PUT("/players/me", UpdatePlayerMe)
 
 	// team leader — JWT required
 	leader := api.Group("/")

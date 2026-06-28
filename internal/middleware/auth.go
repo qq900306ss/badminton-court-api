@@ -27,6 +27,26 @@ func RequireAuth() gin.HandlerFunc {
 	}
 }
 
+// RequirePlayer authenticates a drop-in player by their JWT (role "player").
+// Sets player_id / player_name in the context for handlers.
+func RequirePlayer() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if !strings.HasPrefix(header, "Bearer ") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "請先登入"})
+			return
+		}
+		claims, err := auth.ParseToken(strings.TrimPrefix(header, "Bearer "))
+		if err != nil || claims.Role != "player" || claims.PlayerID == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "請先登入"})
+			return
+		}
+		c.Set("player_id", claims.PlayerID)
+		c.Set("player_name", claims.Name)
+		c.Next()
+	}
+}
+
 func RequireSuperAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, _ := c.Get("role")
