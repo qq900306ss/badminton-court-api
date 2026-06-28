@@ -88,7 +88,6 @@ func ensureTables(ctx context.Context) {
 		sk   string
 	}{
 		{"orgs", "org_id", ""},
-		{"org-members", "org_id", "member_id"},
 		{"sessions", "session_id", ""},
 		{"session-players", "session_id", "player_id"},
 		{"courts", "session_id", "court_id"},

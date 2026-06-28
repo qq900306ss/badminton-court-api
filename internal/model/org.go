@@ -15,11 +15,3 @@ type Org struct {
 	Disabled    bool    `dynamodbav:"disabled" json:"disabled"` // superadmin can block a leader's login
 	CreatedAt   string  `dynamodbav:"created_at" json:"created_at"`
 }
-
-type OrgMember struct {
-	OrgID       string `dynamodbav:"org_id" json:"org_id"`
-	MemberID    string `dynamodbav:"member_id" json:"member_id"`
-	DisplayName string `dynamodbav:"display_name" json:"display_name"`
-	AddedAt     string `dynamodbav:"added_at" json:"added_at"`
-	IsActive    bool   `dynamodbav:"is_active" json:"is_active"`
-}

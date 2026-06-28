@@ -11,52 +11,6 @@ import (
 	"github.com/qq900306ss/badminton-court-api/internal/repository"
 )
 
-// GET /api/orgs/members  — get own roster
-func GetOrgMembers(c *gin.Context) {
-	orgID, _ := c.Get("org_id")
-	members, err := repository.GetOrgMembers(c.Request.Context(), orgID.(string))
-	if err != nil {
-		fail(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	ok(c, members)
-}
-
-// POST /api/orgs/members
-func AddOrgMember(c *gin.Context) {
-	orgID, _ := c.Get("org_id")
-	var body struct {
-		DisplayName string `json:"display_name" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		fail(c, http.StatusBadRequest, err.Error())
-		return
-	}
-	m := model.OrgMember{
-		OrgID:       orgID.(string),
-		MemberID:    uuid.New().String(),
-		DisplayName: body.DisplayName,
-		AddedAt:     time.Now().UTC().Format(time.RFC3339),
-		IsActive:    true,
-	}
-	if err := repository.PutOrgMember(c.Request.Context(), m); err != nil {
-		fail(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	ok(c, m)
-}
-
-// DELETE /api/orgs/members/:memberId
-func DeleteOrgMember(c *gin.Context) {
-	orgID, _ := c.Get("org_id")
-	if err := repository.DeleteOrgMember(c.Request.Context(),
-		orgID.(string), c.Param("memberId")); err != nil {
-		fail(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	ok(c, gin.H{"deleted": true})
-}
-
 // --- superadmin: manage leaders ---
 
 // GET /api/admin/orgs
