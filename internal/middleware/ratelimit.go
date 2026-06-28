@@ -53,7 +53,18 @@ func (l *limiter) allow(ip string) bool {
 // RateLimit caps requests per client IP. 300 requests / 10s clears heavy
 // shared-wifi polling but blocks scripted floods.
 func RateLimit() gin.HandlerFunc {
-	l := newLimiter(300, 10*time.Second)
+	return rateLimitWith(newLimiter(300, 10*time.Second))
+}
+
+// RateLimitStrict is a much tighter per-IP limit for CPU-expensive or
+// brute-forceable endpoints (e.g. password verification, which runs bcrypt).
+// 20 / 10s is generous for a human typing a gate code but caps bcrypt CPU
+// burn and password guessing from a single IP.
+func RateLimitStrict() gin.HandlerFunc {
+	return rateLimitWith(newLimiter(20, 10*time.Second))
+}
+
+func rateLimitWith(l *limiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !l.allow(c.ClientIP()) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests,

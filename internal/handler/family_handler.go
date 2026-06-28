@@ -108,6 +108,11 @@ func RemoveFamilyMember(c *gin.Context) {
 // After approval the family member can be seated / queued / played.
 // POST /api/sessions/:id/players/:playerId/approve
 func ApproveFamilyMember(c *gin.Context) {
+	// ownership: only the leader who owns THIS session may approve (mirrors every
+	// other leader-only mutation — was missing, letting any org hit any session)
+	if _, ok2 := loadOwnedSession(c); !ok2 {
+		return
+	}
 	sid := c.Param("id")
 	pid := c.Param("playerId")
 	players, err := repository.GetSessionPlayers(c.Request.Context(), sid)

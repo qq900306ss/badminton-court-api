@@ -24,7 +24,7 @@ func NewRouter() *gin.Engine {
 	api.POST("/auth/player/line", PlayerLineCallback)
 	api.GET("/push/vapid", PushVapid)
 	api.GET("/sessions/open", ListOpenSessions)
-	api.POST("/sessions/:id/verify-password", VerifyPassword)
+	api.POST("/sessions/:id/verify-password", middleware.RateLimitStrict(), VerifyPassword)
 	api.GET("/sessions/:id", GetSession)
 	api.GET("/sessions/:id/players", GetSessionPlayers)
 	api.GET("/sessions/:id/ws", SessionWS) // real-time nudges
