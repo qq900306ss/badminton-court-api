@@ -436,12 +436,23 @@ func RenameCourt(ctx context.Context, sessionID, courtID, name string) error {
 // RemoveCourt deletes a court (leader). Players currently playing are credited
 // into the stats (as if the game ended); queued players are simply dropped.
 func RemoveCourt(ctx context.Context, sessionID, courtID string) error {
-	court, err := repository.GetCourt(ctx, sessionID, courtID)
+	// Atomically capture-and-clear the court's players inside the optimistic lock,
+	// so a concurrent EndCourt can't credit the same game too: whichever commits
+	// first clears Playing; the other then sees an empty court and credits nothing
+	// (creditFinishedGame no-ops on 0 players). Credit therefore happens once.
+	var finished model.Court
+	err := updateCourt(ctx, sessionID, courtID, func(c *model.Court) error {
+		finished = *c
+		c.Playing = make([]string, 4)
+		c.Queue = nil
+		c.EndVotes = nil
+		return nil
+	})
 	if err != nil {
 		return err
 	}
 	endedAtID := time.Now().UTC().Format(time.RFC3339) + "#" + uuid.New().String()
-	creditFinishedGame(ctx, sessionID, court, endedAtID) // 場上的人計入統計
+	creditFinishedGame(ctx, sessionID, &finished, endedAtID) // 場上的人計入統計
 	return repository.DeleteCourt(ctx, sessionID, courtID)
 }
 

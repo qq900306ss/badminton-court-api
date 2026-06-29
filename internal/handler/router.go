@@ -53,6 +53,7 @@ func NewRouter() *gin.Engine {
 	// team leader — JWT required
 	leader := api.Group("/")
 	leader.Use(middleware.RequireAuth())
+	leader.Use(middleware.RequireSessionOwner()) // block cross-org session access
 	leader.GET("/auth/me", GetMe)
 	leader.GET("/my/sessions", ListMySessions)
 	leader.POST("/my/feedback", SubmitLeaderFeedback)

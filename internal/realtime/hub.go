@@ -16,6 +16,11 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	pingPeriod = 30 * time.Second // how often the server pings each client
+	pongWait   = 70 * time.Second // reader deadline; refreshed on each pong (> pingPeriod)
+)
+
 var upgrader = websocket.Upgrader{
 	// the WS only carries non-sensitive "changed" nudges; real data still goes
 	// through the authenticated REST API. Origin is allowed at the app layer.
@@ -79,9 +84,11 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, room string) {
 	h.add(room, c)
 	done := make(chan struct{})
 
-	// writer: pump queued messages + periodic ping to keep the connection alive
+	// writer: pump queued messages + periodic ping to keep the connection alive.
+	// On any write failure it closes the socket, which unblocks the reader below
+	// immediately (so a dead connection is cleaned up at once, not minutes later).
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(pingPeriod)
 		defer ticker.Stop()
 		for {
 			select {
@@ -91,11 +98,13 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, room string) {
 				}
 				_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if err := ws.WriteMessage(websocket.TextMessage, msg); err != nil {
+					_ = ws.Close()
 					return
 				}
 			case <-ticker.C:
 				_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+					_ = ws.Close()
 					return
 				}
 			case <-done:
@@ -104,8 +113,14 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, room string) {
 		}
 	}()
 
-	// reader: we don't expect client messages; this just detects disconnect
+	// reader: we don't expect client messages; it detects disconnect. A read
+	// deadline (refreshed by the client's pong) ensures a silently-dead mobile
+	// connection is reaped within pongWait instead of leaking a goroutine.
 	ws.SetReadLimit(512)
+	_ = ws.SetReadDeadline(time.Now().Add(pongWait))
+	ws.SetPongHandler(func(string) error {
+		return ws.SetReadDeadline(time.Now().Add(pongWait))
+	})
 	for {
 		if _, _, err := ws.ReadMessage(); err != nil {
 			break

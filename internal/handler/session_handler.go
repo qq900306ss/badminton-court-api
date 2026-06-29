@@ -499,13 +499,20 @@ func CloseSession(c *gin.Context) {
 // loadOwnedSession fetches a session and verifies the calling leader's org owns
 // it. Used by endpoints that expose or change the plaintext gate code.
 func loadOwnedSession(c *gin.Context) (*model.Session, bool) {
-	orgID, _ := c.Get("org_id")
+	// fast path: RequireSessionOwner middleware already loaded + verified it
+	if v, ok := c.Get("owned_session"); ok {
+		if s, ok := v.(*model.Session); ok {
+			return s, true
+		}
+	}
+	// fallback (e.g. superadmin path, where the middleware skips the load)
 	session, err := repository.GetSession(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		fail(c, http.StatusNotFound, "session not found")
 		return nil, false
 	}
-	if session.OrgID != orgID.(string) {
+	orgID, _ := c.Get("org_id")
+	if role, _ := c.Get("role"); role != "superadmin" && session.OrgID != orgID.(string) {
 		fail(c, http.StatusForbidden, "無權限操作這場球局")
 		return nil, false
 	}
