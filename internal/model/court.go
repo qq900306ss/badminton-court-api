@@ -65,6 +65,7 @@ type SessionView struct {
 	EndAt       string      `json:"end_at,omitempty"`
 	QueueOpenAt string      `json:"queue_open_at,omitempty"`
 	ContactURL  string      `json:"contact_url,omitempty"` // 團主自填的聯繫/報名連結(外部,選填)
+	AvatarURL   string      `json:"avatar_url,omitempty"`  // 團主頭像(從 org 帶出來顯示),空=前端預設 🐰
 	Courts      []CourtView `json:"courts"`
 }
 
@@ -82,5 +83,6 @@ type SessionSummary struct {
 	EndAt       string `json:"end_at,omitempty"`
 	QueueOpenAt string `json:"queue_open_at,omitempty"`
 	ContactURL  string `json:"contact_url,omitempty"` // 團主自填的聯繫/報名連結(外部,選填)
+	AvatarURL   string `json:"avatar_url,omitempty"`  // 團主頭像(從 org 帶出來顯示),空=前端預設 🐰
 	OpenedAt    string `json:"opened_at"`
 }

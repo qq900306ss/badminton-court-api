@@ -48,6 +48,67 @@ func UpdateMyOrgName(c *gin.Context) {
 	ok(c, org)
 }
 
+// UpdateMyOrgAvatar sets the leader's single avatar (emoji OR photo URL), shared
+// across every team they open. Empty string resets to the default (🐰, applied
+// by the front-end). Stored on the org, denormalized onto session views for display.
+func UpdateMyOrgAvatar(c *gin.Context) {
+	var body struct {
+		AvatarURL string `json:"avatar_url"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	av := strings.TrimSpace(body.AvatarURL)
+	// emoji (short) or an http(s) photo URL; reject anything else / overly long.
+	if av != "" {
+		isURL := strings.HasPrefix(av, "http://") || strings.HasPrefix(av, "https://")
+		if isURL {
+			if utf8.RuneCountInString(av) > 500 {
+				fail(c, http.StatusBadRequest, "頭像網址太長了")
+				return
+			}
+		} else if utf8.RuneCountInString(av) > 8 {
+			fail(c, http.StatusBadRequest, "頭像格式不正確")
+			return
+		}
+	}
+	orgID, _ := c.Get("org_id")
+	org, err := repository.GetOrg(c.Request.Context(), orgID.(string))
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	org.AvatarURL = av
+	if err := repository.PutOrg(c.Request.Context(), *org); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ok(c, org)
+}
+
+// OrgAvatarUploadURL hands a leader a short-lived presigned S3 PUT URL to upload
+// a team avatar (keyed by org id so it reuses the player avatar bucket/flow).
+func OrgAvatarUploadURL(c *gin.Context) {
+	orgID, _ := c.Get("org_id")
+	var body struct {
+		ContentType string `json:"content_type"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	ct := body.ContentType
+	switch ct {
+	case "image/jpeg", "image/png", "image/webp", "image/gif":
+	default:
+		ct = "image/jpeg"
+	}
+	upload, public, err := repository.PresignAvatarUpload(c.Request.Context(), "org-"+orgID.(string), ct)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ok(c, gin.H{"upload_url": upload, "public_url": public})
+}
+
 // AdminRenameOrg lets the super admin rename any team.
 func AdminRenameOrg(c *gin.Context) {
 	var body struct {

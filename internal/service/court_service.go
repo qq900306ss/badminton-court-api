@@ -56,6 +56,12 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 		views = append(views, cv)
 	}
 
+	// 團主頭像從 org 帶出來顯示在標題列(空=前端預設 🐰)
+	avatarURL := ""
+	if org, e := repository.GetOrg(ctx, session.OrgID); e == nil && org != nil {
+		avatarURL = org.AvatarURL
+	}
+
 	return &model.SessionView{
 		SessionID:   session.SessionID,
 		Title:       session.Title,
@@ -67,6 +73,7 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 		EndAt:       session.EndAt,
 		QueueOpenAt: session.QueueOpenAt,
 		ContactURL:  session.ContactURL,
+		AvatarURL:   avatarURL,
 		Courts:      views,
 	}, nil
 }

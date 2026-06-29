@@ -502,7 +502,25 @@ func ListOpenSessions(c *gin.Context) {
 		}
 		out = append(out, toSummary(s))
 	}
+	attachOrgAvatars(c.Request.Context(), out)
 	ok(c, out)
+}
+
+// attachOrgAvatars denormalizes each session's 團主 avatar onto its summary for
+// display, fetching each distinct org just once (lobby lists span many orgs).
+func attachOrgAvatars(ctx context.Context, out []model.SessionSummary) {
+	cache := map[string]string{}
+	for i := range out {
+		oid := out[i].OrgID
+		av, seen := cache[oid]
+		if !seen {
+			if org, err := repository.GetOrg(ctx, oid); err == nil && org != nil {
+				av = org.AvatarURL
+			}
+			cache[oid] = av
+		}
+		out[i].AvatarURL = av
+	}
 }
 
 // GET /api/my/sessions  — leader's own sessions (open + past)
@@ -521,6 +539,7 @@ func ListMySessions(c *gin.Context) {
 		service.AutoCloseIfExpired(c.Request.Context(), &s) // 過期的標成已結束
 		out = append(out, toSummary(s))
 	}
+	attachOrgAvatars(c.Request.Context(), out)
 	ok(c, out)
 }
 
