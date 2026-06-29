@@ -20,7 +20,7 @@ import (
 
 const (
 	maxNameLen        = 40  // runes
-	maxTitleLen       = 60  // runes
+	maxTitleLen       = 20  // runes — 團名上限,太長卡片會爆版
 	maxSessionPlayers = 200 // per session, anti-spam cap
 	maxOpenPerOrg     = 7   // 同一團主同時最多幾個「正在開團」,擋濫開攻擊
 )
@@ -44,8 +44,12 @@ func CreateSession(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if utf8.RuneCountInString(body.Title) > maxTitleLen || len(body.Password) > 100 {
-		fail(c, http.StatusBadRequest, "名稱或密碼過長")
+	if utf8.RuneCountInString(body.Title) > maxTitleLen {
+		fail(c, http.StatusBadRequest, fmt.Sprintf("團名最多 %d 字", maxTitleLen))
+		return
+	}
+	if len(body.Password) > 100 {
+		fail(c, http.StatusBadRequest, "密碼過長")
 		return
 	}
 	contactURL := strings.TrimSpace(body.ContactURL)
@@ -652,8 +656,8 @@ func SetSessionTitle(c *gin.Context) {
 		return
 	}
 	title := strings.TrimSpace(body.Title)
-	if title == "" || utf8.RuneCountInString(title) > maxNameLen {
-		fail(c, http.StatusBadRequest, "名稱長度不符")
+	if title == "" || utf8.RuneCountInString(title) > maxTitleLen {
+		fail(c, http.StatusBadRequest, fmt.Sprintf("團名需 1~%d 字", maxTitleLen))
 		return
 	}
 	session, ok2 := loadOwnedSession(c)
