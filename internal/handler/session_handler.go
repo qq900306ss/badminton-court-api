@@ -587,6 +587,33 @@ func SetSessionPassword(c *gin.Context) {
 	ok(c, gin.H{"password": body.Password})
 }
 
+// SetSessionTitle lets the leader rename an ongoing 開團 (the session's title).
+func SetSessionTitle(c *gin.Context) {
+	var body struct {
+		Title string `json:"title" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	title := strings.TrimSpace(body.Title)
+	if title == "" || utf8.RuneCountInString(title) > maxNameLen {
+		fail(c, http.StatusBadRequest, "名稱長度不符")
+		return
+	}
+	session, ok2 := loadOwnedSession(c)
+	if !ok2 {
+		return
+	}
+	session.Title = title
+	if err := repository.UpdateSession(c.Request.Context(), *session); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	logAction(c, "rename_session", "把開團名稱改成「"+title+"」")
+	ok(c, session)
+}
+
 // SetSessionTimes lets the leader edit the play window + when self-queue opens.
 // All ISO-8601 strings; empty string clears that field.
 func SetSessionTimes(c *gin.Context) {
