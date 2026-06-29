@@ -6,7 +6,9 @@ import (
 )
 
 func NewRouter() *gin.Engine {
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Recovery())          // recover from panics (was part of gin.Default)
+	r.Use(middleware.RequestTimer()) // one timing line per request → find slow APIs
 	r.Use(middleware.CORS())
 	r.Use(middleware.RateLimit())
 	r.Use(middleware.BodyLimit(64 * 1024)) // 64KB cap on request bodies
