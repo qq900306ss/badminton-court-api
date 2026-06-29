@@ -2,7 +2,9 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -10,6 +12,68 @@ import (
 	"github.com/qq900306ss/badminton-court-api/internal/model"
 	"github.com/qq900306ss/badminton-court-api/internal/repository"
 )
+
+// validOrgName trims + length-checks a team name (1..40 chars).
+func validOrgName(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	n := utf8.RuneCountInString(s)
+	return s, n >= 1 && n <= 40
+}
+
+// UpdateMyOrgName lets a leader rename their own team.
+func UpdateMyOrgName(c *gin.Context) {
+	var body struct {
+		OrgName string `json:"org_name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	name, ok2 := validOrgName(body.OrgName)
+	if !ok2 {
+		fail(c, http.StatusBadRequest, "團名長度需 1~40 字")
+		return
+	}
+	orgID, _ := c.Get("org_id")
+	org, err := repository.GetOrg(c.Request.Context(), orgID.(string))
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	org.OrgName = name
+	if err := repository.PutOrg(c.Request.Context(), *org); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ok(c, org)
+}
+
+// AdminRenameOrg lets the super admin rename any team.
+func AdminRenameOrg(c *gin.Context) {
+	var body struct {
+		OrgName string `json:"org_name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	name, ok2 := validOrgName(body.OrgName)
+	if !ok2 {
+		fail(c, http.StatusBadRequest, "團名長度需 1~40 字")
+		return
+	}
+	org, err := repository.GetOrg(c.Request.Context(), c.Param("orgId"))
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	org.OrgName = name
+	if err := repository.PutOrg(c.Request.Context(), *org); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ok(c, org)
+}
 
 // --- superadmin: manage leaders ---
 
