@@ -146,16 +146,28 @@ func updateCourt(ctx context.Context, sessionID, courtID string, apply func(*mod
 	return fmt.Errorf("系統忙碌中,請再試一次")
 }
 
-// JoinPlaying seats a player at a specific position (0=左上,1=右上,2=左下,3=右下)
+// JoinPlaying seats a player (player front-end: subject to the queue-open gate).
 func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string, position int) error {
+	return joinPlaying(ctx, sessionID, courtID, playerID, position, false)
+}
+
+// LeaderJoinPlaying is the on-site seating board (代排): same player rules but the
+// leader may seat people before self-queue opens (they're physically arranging).
+func LeaderJoinPlaying(ctx context.Context, sessionID, courtID, playerID string, position int) error {
+	return joinPlaying(ctx, sessionID, courtID, playerID, position, true)
+}
+
+func joinPlaying(ctx context.Context, sessionID, courtID, playerID string, position int, bypassGate bool) error {
 	if position < 0 || position > 3 {
 		return fmt.Errorf("invalid position")
 	}
 	if err := validatePlayer(ctx, sessionID, playerID); err != nil {
 		return err
 	}
-	if err := checkQueueOpen(ctx, sessionID); err != nil {
-		return err
+	if !bypassGate {
+		if err := checkQueueOpen(ctx, sessionID); err != nil {
+			return err
+		}
 	}
 	// already in another court? block. already in THIS court? this is a move.
 	if cid, _ := playerInAnyCourt(ctx, sessionID, playerID); cid != "" && cid != courtID {
@@ -179,13 +191,24 @@ func JoinPlaying(ctx context.Context, sessionID, courtID, playerID string, posit
 	})
 }
 
-// JoinQueue adds a player to the queue if there's room (< 4) and playing is full
+// JoinQueue adds a player to the queue (player front-end: queue-open gated).
 func JoinQueue(ctx context.Context, sessionID, courtID, playerID string) error {
+	return joinQueue(ctx, sessionID, courtID, playerID, false)
+}
+
+// LeaderJoinQueue is the on-site seating board path — bypasses the queue-open gate.
+func LeaderJoinQueue(ctx context.Context, sessionID, courtID, playerID string) error {
+	return joinQueue(ctx, sessionID, courtID, playerID, true)
+}
+
+func joinQueue(ctx context.Context, sessionID, courtID, playerID string, bypassGate bool) error {
 	if err := validatePlayer(ctx, sessionID, playerID); err != nil {
 		return err
 	}
-	if err := checkQueueOpen(ctx, sessionID); err != nil {
-		return err
+	if !bypassGate {
+		if err := checkQueueOpen(ctx, sessionID); err != nil {
+			return err
+		}
 	}
 	if cid, _ := playerInAnyCourt(ctx, sessionID, playerID); cid != "" {
 		return fmt.Errorf("你已經在其他場地了,請先退出")
@@ -329,6 +352,10 @@ func VoteEndCourt(ctx context.Context, sessionID, courtID, playerID string) (end
 					no = append(no, pid)
 				}
 			}
+			// clear the votes IN THIS committed write, so a second voter whose
+			// request commits/retries right after won't also read "threshold
+			// reached" and fire EndCourt a second time (double-credit).
+			court.EndVotes = nil
 		}
 		return nil
 	})

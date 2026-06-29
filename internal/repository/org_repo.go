@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -10,6 +11,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/qq900306ss/badminton-court-api/internal/model"
 )
+
+// indexNotReady is true while a GSI is still being created/backfilled (Query on
+// it returns ResourceNotFoundException) — the only case we should Scan-fallback.
+func indexNotReady(err error) bool {
+	var rnf *types.ResourceNotFoundException
+	return errors.As(err, &rnf)
+}
 
 func PutOrg(ctx context.Context, o model.Org) error {
 	item, err := attributevalue.MarshalMap(o)
@@ -36,7 +44,10 @@ func GetOrgByEmail(ctx context.Context, email string) (*model.Org, error) {
 		Limit: aws.Int32(1),
 	})
 	if err != nil {
-		return scanOrgByEmail(ctx, email)
+		if indexNotReady(err) {
+			return scanOrgByEmail(ctx, email)
+		}
+		return nil, err
 	}
 	if len(out.Items) == 0 {
 		return nil, nil

@@ -166,7 +166,7 @@ func LeaderSeatPlaying(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := service.JoinPlaying(c.Request.Context(),
+	if err := service.LeaderJoinPlaying(c.Request.Context(),
 		c.Param("id"), c.Param("courtId"), body.PlayerID, body.Position); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
@@ -184,7 +184,7 @@ func LeaderSeatQueue(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := service.JoinQueue(c.Request.Context(),
+	if err := service.LeaderJoinQueue(c.Request.Context(),
 		c.Param("id"), c.Param("courtId"), body.PlayerID); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return

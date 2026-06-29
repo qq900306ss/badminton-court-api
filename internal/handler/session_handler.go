@@ -599,19 +599,40 @@ func SetSessionTimes(c *gin.Context) {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	start, ok1 := validISOTime(c, body.StartAt)
+	end, ok2t := validISOTime(c, body.EndAt)
+	queue, ok3 := validISOTime(c, body.QueueOpenAt)
+	if !ok1 || !ok2t || !ok3 {
+		return
+	}
 	session, ok2 := loadOwnedSession(c)
 	if !ok2 {
 		return
 	}
-	session.StartAt = strings.TrimSpace(body.StartAt)
-	session.EndAt = strings.TrimSpace(body.EndAt)
-	session.QueueOpenAt = strings.TrimSpace(body.QueueOpenAt)
+	session.StartAt = start
+	session.EndAt = end
+	session.QueueOpenAt = queue
 	if err := repository.UpdateSession(c.Request.Context(), *session); err != nil {
 		fail(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	logAction(c, "set_times", "更新了時間設定")
 	ok(c, session)
+}
+
+// validISOTime trims a time string and ensures it's empty or a valid RFC3339
+// timestamp (a malformed one would silently disable auto-close / the queue gate).
+// On invalid input it writes a 400 and returns ok=false.
+func validISOTime(c *gin.Context, s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", true
+	}
+	if _, err := time.Parse(time.RFC3339, s); err != nil {
+		fail(c, http.StatusBadRequest, "時間格式不正確")
+		return "", false
+	}
+	return s, true
 }
 
 // POST /api/sessions/:id/courts  — add a court (team leader)

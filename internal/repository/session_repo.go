@@ -124,7 +124,13 @@ func ListSessionsByOrg(ctx context.Context, orgID string) ([]model.Session, erro
 			ExclusiveStartKey: startKey,
 		})
 		if err != nil {
-			return scanSessionsByOrg(ctx, orgID)
+			// only Scan-fallback while the GSI is still building, and only before
+			// we've accumulated any pages (don't discard partial results / re-scan
+			// on a transient mid-pagination error)
+			if startKey == nil && indexNotReady(err) {
+				return scanSessionsByOrg(ctx, orgID)
+			}
+			return nil, err
 		}
 		var page []model.Session
 		if err := attributevalue.UnmarshalListOfMaps(out.Items, &page); err != nil {
