@@ -37,14 +37,16 @@ func Init(ctx context.Context) error {
 	ensureTables(ctx)
 	ensureSessionStatusGSI(ctx)
 	ensurePlayersTable(ctx)
-	ensureActionLogTTL(ctx)
+	ensureTTL(ctx, "action-logs") // 90 天自動清操作紀錄
+	ensureTTL(ctx, "sessions")    // 隱藏的場次 90 天後自動清(未隱藏者沒 expires_at,不會被刪)
 	return nil
 }
 
-// ensureActionLogTTL turns on DynamoDB TTL for the action-logs table so old
-// rows (expires_at < now) are auto-deleted (~90 day retention). Idempotent.
-func ensureActionLogTTL(ctx context.Context) {
-	tbl := TableName("action-logs")
+// ensureTTL turns on DynamoDB TTL on the table's `expires_at` attribute so rows
+// whose expires_at is in the past are auto-deleted. Only rows that HAVE an
+// expires_at are affected. Idempotent + best-effort.
+func ensureTTL(ctx context.Context, name string) {
+	tbl := TableName(name)
 	desc, err := client.DescribeTimeToLive(ctx, &dynamodb.DescribeTimeToLiveInput{TableName: aws.String(tbl)})
 	if err == nil && desc.TimeToLiveDescription != nil {
 		st := desc.TimeToLiveDescription.TimeToLiveStatus
@@ -60,7 +62,7 @@ func ensureActionLogTTL(ctx context.Context) {
 		},
 	})
 	if err != nil {
-		log.Printf("ensureActionLogTTL: %v", err)
+		log.Printf("ensureTTL(%s): %v", name, err)
 	}
 }
 

@@ -72,6 +72,17 @@ func SubmitLeaderFeedback(c *gin.Context) {
 	saveFeedback(c, "leader", c.GetString("org_id"), email, email, body.Message)
 }
 
+// AdminListPlayers — super admin reads every player account for member
+// management: login name + login photo vs. the name + avatar they currently use.
+func AdminListPlayers(c *gin.Context) {
+	players, err := repository.ListPlayers(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ok(c, players)
+}
+
 // AdminListFeedback — super admin reads every feedback message (with author + email).
 func AdminListFeedback(c *gin.Context) {
 	list, err := repository.ListFeedback(c.Request.Context(), 500)

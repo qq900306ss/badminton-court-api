@@ -24,6 +24,32 @@ func PutPlayer(ctx context.Context, p model.Player) error {
 	return err
 }
 
+// ListPlayers scans all player accounts (super-admin member management).
+// Paginated so it never silently truncates at DynamoDB's 1 MB page limit.
+func ListPlayers(ctx context.Context) ([]model.Player, error) {
+	var players []model.Player
+	var startKey map[string]types.AttributeValue
+	for {
+		out, err := client.Scan(ctx, &dynamodb.ScanInput{
+			TableName:         aws.String(TableName("players")),
+			ExclusiveStartKey: startKey,
+		})
+		if err != nil {
+			return nil, err
+		}
+		var page []model.Player
+		if err := attributevalue.UnmarshalListOfMaps(out.Items, &page); err != nil {
+			return nil, err
+		}
+		players = append(players, page...)
+		if len(out.LastEvaluatedKey) == 0 {
+			break
+		}
+		startKey = out.LastEvaluatedKey
+	}
+	return players, nil
+}
+
 func GetPlayer(ctx context.Context, playerID string) (*model.Player, error) {
 	out, err := client.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(TableName("players")),

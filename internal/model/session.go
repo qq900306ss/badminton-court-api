@@ -23,6 +23,8 @@ type Session struct {
 	CreatedBy    string        `dynamodbav:"created_by" json:"created_by"`
 	OpenedAt     string        `dynamodbav:"opened_at" json:"opened_at"`
 	ClosedAt     string        `dynamodbav:"closed_at,omitempty" json:"closed_at,omitempty"`
+	Hidden       bool          `dynamodbav:"hidden,omitempty" json:"-"`         // 團主從自己歷史清單移除(超管仍看得到)
+	ExpiresAt    int64         `dynamodbav:"expires_at,omitempty" json:"-"`     // TTL epoch secs;隱藏後 90 天 DynamoDB 自動刪
 }
 
 // GameLog is one finished game (a court being ended).

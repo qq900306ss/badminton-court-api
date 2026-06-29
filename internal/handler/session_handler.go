@@ -473,10 +473,31 @@ func ListMySessions(c *gin.Context) {
 	}
 	out := make([]model.SessionSummary, 0, len(sessions))
 	for _, s := range sessions {
+		if s.Hidden {
+			continue // 團主已從清單移除
+		}
 		service.AutoCloseIfExpired(c.Request.Context(), &s) // 過期的標成已結束
 		out = append(out, toSummary(s))
 	}
 	ok(c, out)
+}
+
+// HideSession removes a (closed) session from the leader's own history list.
+// The row stays in DynamoDB and is purged by TTL ~90 days later; the super admin
+// still sees it meanwhile.
+func HideSession(c *gin.Context) {
+	session, ok2 := loadOwnedSession(c)
+	if !ok2 {
+		return
+	}
+	session.Hidden = true
+	session.ExpiresAt = time.Now().Add(90 * 24 * time.Hour).Unix()
+	if err := repository.UpdateSession(c.Request.Context(), *session); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	logAction(c, "hide_session", "從歷史清單移除了這場")
+	ok(c, gin.H{"hidden": true})
 }
 
 // POST /api/sessions/:id/close  (team leader)

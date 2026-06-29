@@ -67,6 +67,7 @@ func NewRouter() *gin.Engine {
 	leader.POST("/sessions/:id/players/:playerId/approve", ApproveFamilyMember)
 	leader.DELETE("/sessions/:id/players/:playerId", RemoveSessionPlayer)
 	leader.POST("/sessions/:id/close", CloseSession)
+	leader.POST("/sessions/:id/hide", HideSession)
 	leader.GET("/sessions/:id/password", GetSessionPassword)
 	leader.PUT("/sessions/:id/password", SetSessionPassword)
 	leader.PUT("/sessions/:id/times", SetSessionTimes)
@@ -93,6 +94,7 @@ func NewRouter() *gin.Engine {
 	admin.POST("/orgs/:orgId/disabled", AdminSetOrgDisabled)
 	admin.POST("/impersonate/:orgId", AdminImpersonate)
 	admin.GET("/sessions", AdminListSessions)
+	admin.GET("/players", AdminListPlayers)
 	admin.GET("/feedback", AdminListFeedback)
 
 	return r
