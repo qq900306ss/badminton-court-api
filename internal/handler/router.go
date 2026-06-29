@@ -74,6 +74,7 @@ func NewRouter() *gin.Engine {
 	leader.GET("/sessions/:id/password", GetSessionPassword)
 	leader.PUT("/sessions/:id/password", SetSessionPassword)
 	leader.PUT("/sessions/:id/title", SetSessionTitle)
+	leader.PUT("/sessions/:id/location", SetSessionLocation)
 	leader.PUT("/sessions/:id/times", SetSessionTimes)
 	leader.POST("/sessions/:id/courts", AddCourt)
 	leader.PUT("/sessions/:id/courts/:courtId/name", RenameCourt)

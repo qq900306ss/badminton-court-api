@@ -57,6 +57,8 @@ type CourtView struct {
 type SessionView struct {
 	SessionID   string      `json:"session_id"`
 	Title       string      `json:"title"`
+	City        string      `json:"city,omitempty"`
+	District    string      `json:"district,omitempty"`
 	NumCourts   int         `json:"num_courts"`
 	Status      string      `json:"status"`
 	StartAt     string      `json:"start_at,omitempty"`

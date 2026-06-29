@@ -59,6 +59,8 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 	return &model.SessionView{
 		SessionID:   session.SessionID,
 		Title:       session.Title,
+		City:        session.City,
+		District:    session.District,
 		NumCourts:   session.NumCourts,
 		Status:      string(session.Status),
 		StartAt:     session.StartAt,

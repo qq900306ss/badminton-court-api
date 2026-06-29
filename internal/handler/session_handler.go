@@ -614,6 +614,36 @@ func SetSessionTitle(c *gin.Context) {
 	ok(c, session)
 }
 
+// SetSessionLocation lets the leader change the session's 縣市 / 區.
+func SetSessionLocation(c *gin.Context) {
+	var body struct {
+		City     string `json:"city" binding:"required"`
+		District string `json:"district" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	city := strings.TrimSpace(body.City)
+	district := strings.TrimSpace(body.District)
+	if city == "" || district == "" {
+		fail(c, http.StatusBadRequest, "縣市與區不可空白")
+		return
+	}
+	session, ok2 := loadOwnedSession(c)
+	if !ok2 {
+		return
+	}
+	session.City = city
+	session.District = district
+	if err := repository.UpdateSession(c.Request.Context(), *session); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	logAction(c, "set_location", "更新了縣市/區:"+city+district)
+	ok(c, session)
+}
+
 // SetSessionTimes lets the leader edit the play window + when self-queue opens.
 // All ISO-8601 strings; empty string clears that field.
 func SetSessionTimes(c *gin.Context) {
