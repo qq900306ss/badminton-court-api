@@ -37,6 +37,7 @@ func CreateSession(c *gin.Context) {
 		StartAt     string   `json:"start_at"`
 		EndAt       string   `json:"end_at"`
 		QueueOpenAt string   `json:"queue_open_at"`
+		ContactURL  string   `json:"contact_url"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
@@ -45,6 +46,17 @@ func CreateSession(c *gin.Context) {
 	if utf8.RuneCountInString(body.Title) > maxTitleLen || len(body.Password) > 100 {
 		fail(c, http.StatusBadRequest, "名稱或密碼過長")
 		return
+	}
+	contactURL := strings.TrimSpace(body.ContactURL)
+	if contactURL != "" {
+		if !strings.HasPrefix(contactURL, "http://") && !strings.HasPrefix(contactURL, "https://") {
+			fail(c, http.StatusBadRequest, "聯繫連結需以 http:// 或 https:// 開頭")
+			return
+		}
+		if utf8.RuneCountInString(contactURL) > 500 {
+			fail(c, http.StatusBadRequest, "聯繫連結太長了")
+			return
+		}
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
@@ -64,6 +76,7 @@ func CreateSession(c *gin.Context) {
 		District:     body.District,
 		PasswordHash: string(hash),
 		Password:     body.Password,
+		ContactURL:   contactURL,
 		NumCourts:    body.NumCourts,
 		Status:       model.SessionOpen,
 		StartAt:      body.StartAt,
