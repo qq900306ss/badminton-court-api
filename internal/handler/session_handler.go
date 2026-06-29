@@ -22,6 +22,7 @@ const (
 	maxNameLen        = 40  // runes
 	maxTitleLen       = 60  // runes
 	maxSessionPlayers = 200 // per session, anti-spam cap
+	maxOpenPerOrg     = 7   // 同一團主同時最多幾個「正在開團」,擋濫開攻擊
 )
 
 // POST /api/sessions  (team leader)
@@ -55,6 +56,27 @@ func CreateSession(c *gin.Context) {
 		}
 		if utf8.RuneCountInString(contactURL) > 500 {
 			fail(c, http.StatusBadRequest, "聯繫連結太長了")
+			return
+		}
+	}
+
+	// 每個團主同時「正在開團」數量上限,擋濫開攻擊(superadmin 不限)。
+	// 順手把過期的舊團自動關掉,讓計數準確、也釋放額度。
+	if role, _ := c.Get("role"); role != "superadmin" {
+		existing, err := repository.ListSessionsByOrg(c.Request.Context(), orgID.(string))
+		if err != nil {
+			fail(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		open := 0
+		for i := range existing {
+			service.AutoCloseIfExpired(c.Request.Context(), &existing[i])
+			if existing[i].Status == model.SessionOpen {
+				open++
+			}
+		}
+		if open >= maxOpenPerOrg {
+			fail(c, http.StatusBadRequest, fmt.Sprintf("最多只能同時有 %d 個正在開團,請先結束或關閉舊的團再開新的", maxOpenPerOrg))
 			return
 		}
 	}
