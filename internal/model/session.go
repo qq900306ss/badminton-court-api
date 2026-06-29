@@ -15,6 +15,7 @@ type Session struct {
 	District     string        `dynamodbav:"district,omitempty" json:"district,omitempty"` // 區
 	PasswordHash string        `dynamodbav:"password_hash" json:"-"`
 	Password     string        `dynamodbav:"password,omitempty" json:"-"` // plaintext gate code, leader-visible only; legacy sessions have none
+	ContactURL   string        `dynamodbav:"contact_url,omitempty" json:"contact_url,omitempty"` // 團主自填的聯繫/報名連結(外部,選填)
 	NumCourts    int           `dynamodbav:"num_courts" json:"num_courts"`
 	Status       SessionStatus `dynamodbav:"status" json:"status"`
 	StartAt      string        `dynamodbav:"start_at,omitempty" json:"start_at,omitempty"`           // ISO, play window start

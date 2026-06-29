@@ -448,6 +448,7 @@ func toSummary(s model.Session) model.SessionSummary {
 		StartAt:     s.StartAt,
 		EndAt:       s.EndAt,
 		QueueOpenAt: s.QueueOpenAt,
+		ContactURL:  s.ContactURL,
 		OpenedAt:    s.OpenedAt,
 	}
 }
@@ -641,6 +642,45 @@ func SetSessionLocation(c *gin.Context) {
 		return
 	}
 	logAction(c, "set_location", "更新了縣市/區:"+city+district)
+	ok(c, session)
+}
+
+// SetSessionContact lets the leader set/clear an external 聯繫團主 link shown to
+// players on the lobby card. Empty string clears it. The link is leader-supplied
+// and untrusted — the player UI warns before opening it.
+func SetSessionContact(c *gin.Context) {
+	var body struct {
+		ContactURL string `json:"contact_url"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	url := strings.TrimSpace(body.ContactURL)
+	if url != "" {
+		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+			fail(c, http.StatusBadRequest, "連結需以 http:// 或 https:// 開頭")
+			return
+		}
+		if utf8.RuneCountInString(url) > 500 {
+			fail(c, http.StatusBadRequest, "連結太長了")
+			return
+		}
+	}
+	session, ok2 := loadOwnedSession(c)
+	if !ok2 {
+		return
+	}
+	session.ContactURL = url
+	if err := repository.UpdateSession(c.Request.Context(), *session); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if url == "" {
+		logAction(c, "set_contact", "移除了聯繫團主連結")
+	} else {
+		logAction(c, "set_contact", "設定了聯繫團主連結")
+	}
 	ok(c, session)
 }
 

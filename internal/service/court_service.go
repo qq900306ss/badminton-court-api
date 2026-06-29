@@ -66,6 +66,7 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 		StartAt:     session.StartAt,
 		EndAt:       session.EndAt,
 		QueueOpenAt: session.QueueOpenAt,
+		ContactURL:  session.ContactURL,
 		Courts:      views,
 	}, nil
 }
