@@ -36,10 +36,48 @@ func Init(ctx context.Context) error {
 	// Errors are logged so they surface in CloudWatch and via /health.
 	ensureTables(ctx)
 	ensureSessionStatusGSI(ctx)
+	ensureGSI(ctx, "sessions", "org-index", "org_id")     // 團主自己的開團 → Query 不再全表 Scan
+	ensureGSI(ctx, "orgs", "email-index", "google_email") // 團主登入查 email → Query 不再全表 Scan
 	ensurePlayersTable(ctx)
 	ensureTTL(ctx, "action-logs") // 90 天自動清操作紀錄
 	ensureTTL(ctx, "sessions")    // 隱藏的場次 90 天後自動清(未隱藏者沒 expires_at,不會被刪)
 	return nil
+}
+
+// ensureGSI adds a single-hash-key GlobalSecondaryIndex (project ALL) to a table
+// if it isn't already there. Idempotent + best-effort. NOTE: DynamoDB only allows
+// ONE GSI to be in CREATING state per table at a time, so don't add two new GSIs
+// to the same table in one startup — spread them across deploys; queries fall
+// back to Scan until the index is ACTIVE.
+func ensureGSI(ctx context.Context, table, indexName, hashKey string) {
+	tbl := TableName(table)
+	desc, err := client.DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: aws.String(tbl)})
+	if err != nil {
+		return
+	}
+	for _, gsi := range desc.Table.GlobalSecondaryIndexes {
+		if gsi.IndexName != nil && *gsi.IndexName == indexName {
+			return // already present
+		}
+	}
+	_, err = client.UpdateTable(ctx, &dynamodb.UpdateTableInput{
+		TableName: aws.String(tbl),
+		AttributeDefinitions: []types.AttributeDefinition{
+			{AttributeName: aws.String(hashKey), AttributeType: types.ScalarAttributeTypeS},
+		},
+		GlobalSecondaryIndexUpdates: []types.GlobalSecondaryIndexUpdate{
+			{Create: &types.CreateGlobalSecondaryIndexAction{
+				IndexName: aws.String(indexName),
+				KeySchema: []types.KeySchemaElement{
+					{AttributeName: aws.String(hashKey), KeyType: types.KeyTypeHash},
+				},
+				Projection: &types.Projection{ProjectionType: types.ProjectionTypeAll},
+			}},
+		},
+	})
+	if err != nil {
+		log.Printf("ensureGSI(%s/%s): %v", table, indexName, err)
+	}
 }
 
 // ensureTTL turns on DynamoDB TTL on the table's `expires_at` attribute so rows

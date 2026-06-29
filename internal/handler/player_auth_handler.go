@@ -103,6 +103,12 @@ func findOrCreatePlayer(ctx context.Context, provider, sub, name, avatar, email 
 			existing.AvatarURL = avatar // legacy account had no avatar yet
 			changed = true
 		}
+		// heal legacy accounts: provider photo wasn't captured at signup but the
+		// avatar is a photo → use it as the login photo so 成員管理 shows it.
+		if existing.PhotoURL == "" && strings.HasPrefix(existing.AvatarURL, "http") {
+			existing.PhotoURL = existing.AvatarURL
+			changed = true
+		}
 		if email != "" && existing.Email != email {
 			existing.Email = email
 			changed = true

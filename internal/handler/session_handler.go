@@ -250,6 +250,12 @@ func AddSessionPlayer(c *gin.Context) {
 		return
 	}
 
+	// serialise per session so two quick taps with the same name can't both pass
+	// the dup-check and create duplicate session-players
+	lk := familyAddLock("addplayer|" + sessionID)
+	lk.Lock()
+	defer lk.Unlock()
+
 	existing, _ := repository.GetSessionPlayers(c.Request.Context(), sessionID)
 	for _, p := range existing {
 		if p.DisplayName == body.DisplayName {

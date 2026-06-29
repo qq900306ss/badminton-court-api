@@ -24,6 +24,32 @@ func PutOrg(ctx context.Context, o model.Org) error {
 }
 
 func GetOrgByEmail(ctx context.Context, email string) (*model.Org, error) {
+	// O(1) lookup via the email GSI (every leader login hits this). Falls back to
+	// a Scan while the index is still backfilling right after a fresh deploy.
+	out, err := client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(TableName("orgs")),
+		IndexName:              aws.String("email-index"),
+		KeyConditionExpression: aws.String("google_email = :e"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":e": &types.AttributeValueMemberS{Value: email},
+		},
+		Limit: aws.Int32(1),
+	})
+	if err != nil {
+		return scanOrgByEmail(ctx, email)
+	}
+	if len(out.Items) == 0 {
+		return nil, nil
+	}
+	var o model.Org
+	if err := attributevalue.UnmarshalMap(out.Items[0], &o); err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+// scanOrgByEmail is the pre-GSI fallback, used only while email-index builds.
+func scanOrgByEmail(ctx context.Context, email string) (*model.Org, error) {
 	out, err := client.Scan(ctx, &dynamodb.ScanInput{
 		TableName:        aws.String(TableName("orgs")),
 		FilterExpression: aws.String("google_email = :e"),

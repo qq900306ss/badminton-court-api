@@ -108,7 +108,39 @@ func ListAllSessions(ctx context.Context) ([]model.Session, error) {
 }
 
 // ListSessionsByOrg returns every session created by an org (for "my sessions").
+// Uses the org GSI (paginated) instead of a full-table Scan; falls back to Scan
+// while the index is still backfilling on a fresh deploy.
 func ListSessionsByOrg(ctx context.Context, orgID string) ([]model.Session, error) {
+	var sessions []model.Session
+	var startKey map[string]types.AttributeValue
+	for {
+		out, err := client.Query(ctx, &dynamodb.QueryInput{
+			TableName:              aws.String(TableName("sessions")),
+			IndexName:              aws.String("org-index"),
+			KeyConditionExpression: aws.String("org_id = :oid"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":oid": &types.AttributeValueMemberS{Value: orgID},
+			},
+			ExclusiveStartKey: startKey,
+		})
+		if err != nil {
+			return scanSessionsByOrg(ctx, orgID)
+		}
+		var page []model.Session
+		if err := attributevalue.UnmarshalListOfMaps(out.Items, &page); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, page...)
+		if len(out.LastEvaluatedKey) == 0 {
+			break
+		}
+		startKey = out.LastEvaluatedKey
+	}
+	return sessions, nil
+}
+
+// scanSessionsByOrg is the pre-GSI fallback, used only while org-index builds.
+func scanSessionsByOrg(ctx context.Context, orgID string) ([]model.Session, error) {
 	out, err := client.Scan(ctx, &dynamodb.ScanInput{
 		TableName:        aws.String(TableName("sessions")),
 		FilterExpression: aws.String("org_id = :oid"),
@@ -139,19 +171,29 @@ func PutSessionPlayer(ctx context.Context, p model.SessionPlayer) error {
 }
 
 func GetSessionPlayers(ctx context.Context, sessionID string) ([]model.SessionPlayer, error) {
-	out, err := client.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(TableName("session-players")),
-		KeyConditionExpression: aws.String("session_id = :sid"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":sid": &types.AttributeValueMemberS{Value: sessionID},
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
 	var players []model.SessionPlayer
-	if err := attributevalue.UnmarshalListOfMaps(out.Items, &players); err != nil {
-		return nil, err
+	var startKey map[string]types.AttributeValue
+	for { // paginate so a big session (>1MB of players) isn't silently truncated
+		out, err := client.Query(ctx, &dynamodb.QueryInput{
+			TableName:              aws.String(TableName("session-players")),
+			KeyConditionExpression: aws.String("session_id = :sid"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":sid": &types.AttributeValueMemberS{Value: sessionID},
+			},
+			ExclusiveStartKey: startKey,
+		})
+		if err != nil {
+			return nil, err
+		}
+		var page []model.SessionPlayer
+		if err := attributevalue.UnmarshalListOfMaps(out.Items, &page); err != nil {
+			return nil, err
+		}
+		players = append(players, page...)
+		if len(out.LastEvaluatedKey) == 0 {
+			break
+		}
+		startKey = out.LastEvaluatedKey
 	}
 	return players, nil
 }
@@ -180,20 +222,30 @@ func DeleteGameLog(ctx context.Context, sessionID, endedAtID string) error {
 }
 
 func ListGameLogs(ctx context.Context, sessionID string) ([]model.GameLog, error) {
-	out, err := client.Query(ctx, &dynamodb.QueryInput{
-		TableName:              aws.String(TableName("game-logs")),
-		KeyConditionExpression: aws.String("session_id = :sid"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":sid": &types.AttributeValueMemberS{Value: sessionID},
-		},
-		ScanIndexForward: aws.Bool(false), // newest first
-	})
-	if err != nil {
-		return nil, err
-	}
 	var logs []model.GameLog
-	if err := attributevalue.UnmarshalListOfMaps(out.Items, &logs); err != nil {
-		return nil, err
+	var startKey map[string]types.AttributeValue
+	for { // paginate so a long session's older games aren't silently dropped
+		out, err := client.Query(ctx, &dynamodb.QueryInput{
+			TableName:              aws.String(TableName("game-logs")),
+			KeyConditionExpression: aws.String("session_id = :sid"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":sid": &types.AttributeValueMemberS{Value: sessionID},
+			},
+			ScanIndexForward:  aws.Bool(false), // newest first
+			ExclusiveStartKey: startKey,
+		})
+		if err != nil {
+			return nil, err
+		}
+		var page []model.GameLog
+		if err := attributevalue.UnmarshalListOfMaps(out.Items, &page); err != nil {
+			return nil, err
+		}
+		logs = append(logs, page...)
+		if len(out.LastEvaluatedKey) == 0 {
+			break
+		}
+		startKey = out.LastEvaluatedKey
 	}
 	return logs, nil
 }
