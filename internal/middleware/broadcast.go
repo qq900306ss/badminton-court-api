@@ -22,6 +22,10 @@ func changeScope(c *gin.Context) string {
 		return "player"
 	case strings.Contains(p, "/courts"):
 		return "court"
+	case strings.HasSuffix(p, "/title"), strings.HasSuffix(p, "/times"),
+		strings.HasSuffix(p, "/password"), strings.HasSuffix(p, "/hide"),
+		strings.HasSuffix(p, "/close"):
+		return "session" // settings-only change → just the session view
 	default:
 		return "all"
 	}
