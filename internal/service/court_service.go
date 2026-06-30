@@ -196,9 +196,6 @@ type FairStats struct {
 // computeFairStats 取「最近有在輪的人」裡場數排名前 1/3(最少 3 人)的平均,
 // 門檻 = 平均 + FairThreshold。每次呼叫都用當下場數重算 → 會自我拉平。
 func computeFairStats(session *model.Session, players []model.SessionPlayer) FairStats {
-	if !session.FairPlay {
-		return FairStats{}
-	}
 	now := time.Now()
 	active := make([]model.SessionPlayer, 0, len(players))
 	for _, p := range players {
@@ -209,9 +206,11 @@ func computeFairStats(session *model.Session, players []model.SessionPlayer) Fai
 			active = append(active, p)
 		}
 	}
-	if len(active) < fairMinActive {
-		return FairStats{Active: len(active), Enforced: false}
+	stats := FairStats{Active: len(active)}
+	if len(active) == 0 {
+		return stats // 還沒人打 → 沒有平均可算
 	}
+	// 平均「不管模式開沒開」都算好,讓團主在決定門檻前就能看到目前平均。
 	sort.Slice(active, func(i, j int) bool { return active[i].Games > active[j].Games })
 	k := (len(active) + 2) / 3 // ceil(n/3)
 	if k < 3 {
@@ -224,8 +223,11 @@ func computeFairStats(session *model.Session, players []model.SessionPlayer) Fai
 	for i := 0; i < k; i++ {
 		sum += active[i].Games
 	}
-	avg := float64(sum) / float64(k)
-	return FairStats{Avg: avg, Threshold: avg + float64(session.FairThreshold), Active: len(active), Enforced: true}
+	stats.Avg = float64(sum) / float64(k)
+	stats.Threshold = stats.Avg + float64(session.FairThreshold)
+	// 只有「模式開 + 在輪人數足夠」才真的擋人。
+	stats.Enforced = session.FairPlay && len(active) >= fairMinActive
+	return stats
 }
 
 // FairPlayBasis exposes the live stats for display (團主設定處 / 前台說明).
