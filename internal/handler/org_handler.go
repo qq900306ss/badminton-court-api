@@ -181,7 +181,18 @@ func AdminListSessions(c *gin.Context) {
 	}
 	out := make([]model.SessionSummary, 0, len(sessions))
 	for _, s := range sessions {
-		out = append(out, toSummary(s))
+		sum := toSummary(s)
+		// 只對「進行中」的團數正在開打的球場(關掉的不可能在打);避免拖慢公開大廳所以只在這支算
+		if s.Status == model.SessionOpen {
+			if courts, e := repository.GetCourts(c.Request.Context(), s.SessionID); e == nil {
+				for _, ct := range courts {
+					if ct.Status == model.CourtPlaying {
+						sum.PlayingCourts++
+					}
+				}
+			}
+		}
+		out = append(out, sum)
 	}
 	ok(c, out)
 }
