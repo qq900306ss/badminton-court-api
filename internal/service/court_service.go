@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -62,19 +63,30 @@ func GetSessionView(ctx context.Context, sessionID string) (*model.SessionView, 
 		avatarURL = org.AvatarURL
 	}
 
+	// 公平讓分:即時統計(重用上面已抓的 players)
+	fair := computeFairStats(session, players)
+
 	return &model.SessionView{
-		SessionID:   session.SessionID,
-		Title:       session.Title,
-		City:        session.City,
-		District:    session.District,
-		NumCourts:   session.NumCourts,
-		Status:      string(session.Status),
-		StartAt:     session.StartAt,
-		EndAt:       session.EndAt,
-		QueueOpenAt: session.QueueOpenAt,
-		ContactURL:  session.ContactURL,
-		AvatarURL:   avatarURL,
-		Courts:      views,
+		SessionID:      session.SessionID,
+		Title:          session.Title,
+		City:           session.City,
+		District:       session.District,
+		NumCourts:      session.NumCourts,
+		Status:         string(session.Status),
+		StartAt:        session.StartAt,
+		EndAt:          session.EndAt,
+		QueueOpenAt:    session.QueueOpenAt,
+		ContactURL:     session.ContactURL,
+		AvatarURL:      avatarURL,
+		ShowGames:      session.ShowGames,
+		FairPlay:       session.FairPlay,
+		FairGraceGames: session.FairGraceGames,
+		FairThreshold:  session.FairThreshold,
+		FairAvg:        fair.Avg,
+		FairLimit:      fair.Threshold,
+		FairActive:     fair.Active,
+		FairEnforced:   fair.Enforced,
+		Courts:         views,
 	}, nil
 }
 
@@ -167,6 +179,96 @@ func LeaderJoinPlaying(ctx context.Context, sessionID, courtID, playerID string,
 	return joinPlaying(ctx, sessionID, courtID, playerID, position, true)
 }
 
+const (
+	fairActiveWindow = 20 * time.Minute // 「最近有在輪」的時間窗
+	fairMinActive    = 5                // 少於這人數不啟用公平讓分(避免場地空轉)
+)
+
+// FairStats is the live, recomputed公平讓分 basis: the average games of the
+// busiest third of currently-active players, and the block threshold above it.
+type FairStats struct {
+	Avg       float64
+	Threshold float64
+	Active    int
+	Enforced  bool // false = 不啟用(模式關 / 人太少)
+}
+
+// computeFairStats 取「最近有在輪的人」裡場數排名前 1/3(最少 3 人)的平均,
+// 門檻 = 平均 + FairThreshold。每次呼叫都用當下場數重算 → 會自我拉平。
+func computeFairStats(session *model.Session, players []model.SessionPlayer) FairStats {
+	if !session.FairPlay {
+		return FairStats{}
+	}
+	now := time.Now()
+	active := make([]model.SessionPlayer, 0, len(players))
+	for _, p := range players {
+		if p.LastPlayedAt == "" {
+			continue
+		}
+		if t, e := time.Parse(time.RFC3339, p.LastPlayedAt); e == nil && now.Sub(t) <= fairActiveWindow {
+			active = append(active, p)
+		}
+	}
+	if len(active) < fairMinActive {
+		return FairStats{Active: len(active), Enforced: false}
+	}
+	sort.Slice(active, func(i, j int) bool { return active[i].Games > active[j].Games })
+	k := (len(active) + 2) / 3 // ceil(n/3)
+	if k < 3 {
+		k = 3
+	}
+	if k > len(active) {
+		k = len(active)
+	}
+	sum := 0
+	for i := 0; i < k; i++ {
+		sum += active[i].Games
+	}
+	avg := float64(sum) / float64(k)
+	return FairStats{Avg: avg, Threshold: avg + float64(session.FairThreshold), Active: len(active), Enforced: true}
+}
+
+// FairPlayBasis exposes the live stats for display (團主設定處 / 前台說明).
+func FairPlayBasis(ctx context.Context, session *model.Session) FairStats {
+	players, err := repository.GetSessionPlayers(ctx, session.SessionID)
+	if err != nil {
+		return FairStats{}
+	}
+	return computeFairStats(session, players)
+}
+
+// checkFairPlay blocks an over-playing player from taking a slot/queue while
+// 公平讓分 is on. Recomputed live → a blocked player auto-unblocks once others
+// catch up. No-op when the mode is off, the player is within grace, or人太少.
+func checkFairPlay(ctx context.Context, sessionID, playerID string) error {
+	session, err := repository.GetSession(ctx, sessionID)
+	if err != nil || session == nil || !session.FairPlay {
+		return nil
+	}
+	players, err := repository.GetSessionPlayers(ctx, sessionID)
+	if err != nil {
+		return nil // 讀不到就放行,別卡死正常流程
+	}
+	var me *model.SessionPlayer
+	for i := range players {
+		if players[i].PlayerID == playerID {
+			me = &players[i]
+			break
+		}
+	}
+	if me == nil || me.Games < session.FairGraceGames {
+		return nil // 找不到 / 寬限內 → 自由
+	}
+	stats := computeFairStats(session, players)
+	if !stats.Enforced {
+		return nil
+	}
+	if float64(me.Games) > stats.Threshold {
+		return fmt.Errorf("本場實施公平讓分:你已打 %d 場(目前門檻 %.0f 場),先讓打較少的人上,等大家追上你就能再排了", me.Games, stats.Threshold)
+	}
+	return nil
+}
+
 func joinPlaying(ctx context.Context, sessionID, courtID, playerID string, position int, bypassGate bool) error {
 	if position < 0 || position > 3 {
 		return fmt.Errorf("invalid position")
@@ -176,6 +278,9 @@ func joinPlaying(ctx context.Context, sessionID, courtID, playerID string, posit
 	}
 	if !bypassGate {
 		if err := checkQueueOpen(ctx, sessionID); err != nil {
+			return err
+		}
+		if err := checkFairPlay(ctx, sessionID, playerID); err != nil {
 			return err
 		}
 	}
@@ -217,6 +322,9 @@ func joinQueue(ctx context.Context, sessionID, courtID, playerID string, bypassG
 	}
 	if !bypassGate {
 		if err := checkQueueOpen(ctx, sessionID); err != nil {
+			return err
+		}
+		if err := checkFairPlay(ctx, sessionID, playerID); err != nil {
 			return err
 		}
 	}
@@ -276,6 +384,7 @@ func creditFinishedGame(ctx context.Context, sessionID string, court *model.Cour
 		if p, ok := pm[pid]; ok {
 			p.Games++
 			p.TotalMinutes += minutes
+			p.LastPlayedAt = now.Format(time.RFC3339) // 公平讓分:標記「最近有在輪」
 			_ = repository.PutSessionPlayer(ctx, p)
 			names = append(names, p.DisplayName)
 		}
@@ -402,7 +511,7 @@ func EndCourt(ctx context.Context, sessionID, courtID string) error {
 		}
 		court.Playing = make([]string, 4) // 清空場上
 		court.StartedAt = ""
-		court.EndVotes = nil // 新的一場,清空結束投票
+		court.EndVotes = nil            // 新的一場,清空結束投票
 		promoted = fillFromQueue(court) // 換排隊的人上場(缺幾補幾)
 		return nil
 	})

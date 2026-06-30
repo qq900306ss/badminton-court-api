@@ -761,6 +761,63 @@ func SetSessionContact(c *gin.Context) {
 	ok(c, session)
 }
 
+// SetSessionAdvanced updates the per-session advanced features (公平讓分 + 顯示場數).
+// Editable during an open session. Fields are pointers so toggles can be sent
+// individually. 公平讓分 forces 顯示場數 on (the mode requires transparency).
+func SetSessionAdvanced(c *gin.Context) {
+	var body struct {
+		ShowGames      *bool `json:"show_games"`
+		FairPlay       *bool `json:"fair_play"`
+		FairGraceGames *int  `json:"fair_grace_games"`
+		FairThreshold  *int  `json:"fair_threshold"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	session, ok2 := loadOwnedSession(c)
+	if !ok2 {
+		return
+	}
+	clamp := func(v, lo, hi int) int {
+		if v < lo {
+			return lo
+		}
+		if v > hi {
+			return hi
+		}
+		return v
+	}
+	if body.ShowGames != nil {
+		session.ShowGames = *body.ShowGames
+	}
+	if body.FairPlay != nil {
+		session.FairPlay = *body.FairPlay
+	}
+	if body.FairGraceGames != nil {
+		session.FairGraceGames = clamp(*body.FairGraceGames, 0, 50)
+	}
+	if body.FairThreshold != nil {
+		session.FairThreshold = clamp(*body.FairThreshold, 0, 50)
+	}
+	if session.FairPlay {
+		session.ShowGames = true // 公平讓分必須透明 → 強制顯示場數
+	}
+	if err := repository.UpdateSession(c.Request.Context(), *session); err != nil {
+		fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	detail := "公平讓分:關"
+	if session.FairPlay {
+		detail = fmt.Sprintf("公平讓分:開(寬限 %d 場、高於平均 %d 場擋)", session.FairGraceGames, session.FairThreshold)
+	}
+	if session.ShowGames {
+		detail += "、顯示場數:開"
+	}
+	logAction(c, "set_advanced", detail)
+	ok(c, session)
+}
+
 // SetSessionTimes lets the leader edit the play window + when self-queue opens.
 // All ISO-8601 strings; empty string clears that field.
 func SetSessionTimes(c *gin.Context) {

@@ -30,6 +30,7 @@ func changeScope(c *gin.Context) string {
 		return "court"
 	case strings.HasSuffix(p, "/title"), strings.HasSuffix(p, "/times"),
 		strings.HasSuffix(p, "/location"), strings.HasSuffix(p, "/contact"),
+		strings.HasSuffix(p, "/advanced"),
 		strings.HasSuffix(p, "/hide"), strings.HasSuffix(p, "/close"):
 		return "session"
 	default:

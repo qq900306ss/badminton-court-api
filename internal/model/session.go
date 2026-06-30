@@ -26,6 +26,11 @@ type Session struct {
 	ClosedAt     string        `dynamodbav:"closed_at,omitempty" json:"closed_at,omitempty"`
 	Hidden       bool          `dynamodbav:"hidden,omitempty" json:"-"`         // 團主從自己歷史清單移除(超管仍看得到)
 	ExpiresAt    int64         `dynamodbav:"expires_at,omitempty" json:"-"`     // TTL epoch secs;隱藏後 90 天 DynamoDB 自動刪
+	// 進階開團功能(公平讓分),開團期間可即時調整
+	ShowGames      bool `dynamodbav:"show_games,omitempty" json:"-"`       // 讓臨打人前台看到所有人場數
+	FairPlay       bool `dynamodbav:"fair_play,omitempty" json:"-"`        // 公平讓分:多打的人暫時不給上場/排候補
+	FairGraceGames int  `dynamodbav:"fair_grace_games,omitempty" json:"-"` // 寬限場數 N,打滿才受限(預設 4)
+	FairThreshold  int  `dynamodbav:"fair_threshold,omitempty" json:"-"`  // 門檻 X:高於平均幾場算超標(預設 2)
 }
 
 // GameLog is one finished game (a court being ended).
@@ -54,4 +59,5 @@ type SessionPlayer struct {
 	OwnerID      string `dynamodbav:"owner_id,omitempty" json:"owner_id,omitempty"`     // 家人子身份:控制它的手機帳號 account_id
 	Pending      bool   `dynamodbav:"pending,omitempty" json:"pending,omitempty"`       // 家人待團主核准(未核准不可排點)
 	AvatarURL    string `dynamodbav:"avatar_url,omitempty" json:"avatar_url,omitempty"` // copied from account, for rendering
+	LastPlayedAt string `dynamodbav:"last_played_at,omitempty" json:"-"`               // 最近一次打完球的時間(判斷「還在輪」用,公平讓分)
 }

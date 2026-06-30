@@ -55,18 +55,27 @@ type CourtView struct {
 }
 
 type SessionView struct {
-	SessionID   string      `json:"session_id"`
-	Title       string      `json:"title"`
-	City        string      `json:"city,omitempty"`
-	District    string      `json:"district,omitempty"`
-	NumCourts   int         `json:"num_courts"`
-	Status      string      `json:"status"`
-	StartAt     string      `json:"start_at,omitempty"`
-	EndAt       string      `json:"end_at,omitempty"`
-	QueueOpenAt string      `json:"queue_open_at,omitempty"`
-	ContactURL  string      `json:"contact_url,omitempty"` // 團主自填的聯繫/報名連結(外部,選填)
-	AvatarURL   string      `json:"avatar_url,omitempty"`  // 團主頭像(從 org 帶出來顯示),空=前端預設 🐰
-	Courts      []CourtView `json:"courts"`
+	SessionID   string `json:"session_id"`
+	Title       string `json:"title"`
+	City        string `json:"city,omitempty"`
+	District    string `json:"district,omitempty"`
+	NumCourts   int    `json:"num_courts"`
+	Status      string `json:"status"`
+	StartAt     string `json:"start_at,omitempty"`
+	EndAt       string `json:"end_at,omitempty"`
+	QueueOpenAt string `json:"queue_open_at,omitempty"`
+	ContactURL  string `json:"contact_url,omitempty"` // 團主自填的聯繫/報名連結(外部,選填)
+	AvatarURL   string `json:"avatar_url,omitempty"`  // 團主頭像(從 org 帶出來顯示),空=前端預設 🐰
+	// 進階開團功能(公平讓分)
+	ShowGames      bool        `json:"show_games,omitempty"`       // 顯示所有人場數給臨打人
+	FairPlay       bool        `json:"fair_play,omitempty"`        // 公平讓分模式開啟中
+	FairGraceGames int         `json:"fair_grace_games,omitempty"` // 寬限場數 N
+	FairThreshold  int         `json:"fair_threshold,omitempty"`   // 門檻 X(高於平均幾場)
+	FairAvg        float64     `json:"fair_avg,omitempty"`         // 即時平均(顯示用)
+	FairLimit      float64     `json:"fair_limit,omitempty"`       // 實際封鎖線 = 平均 + X
+	FairActive     int         `json:"fair_active,omitempty"`      // 目前在輪人數
+	FairEnforced   bool        `json:"fair_enforced,omitempty"`    // 目前是否真的在限制(人數足夠)
+	Courts         []CourtView `json:"courts"`
 }
 
 // SessionSummary is the lightweight card shown in the player lobby and the
