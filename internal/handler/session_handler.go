@@ -510,6 +510,21 @@ func ListOpenSessions(c *gin.Context) {
 	ok(c, out)
 }
 
+// playingCourtCount returns how many of a session's courts are currently in play.
+// Caller should only invoke it for OPEN sessions (closed ones can't be playing)
+// and on low-traffic paths — it does one GetCourts per session.
+func playingCourtCount(ctx context.Context, sessionID string) int {
+	n := 0
+	if courts, e := repository.GetCourts(ctx, sessionID); e == nil {
+		for _, ct := range courts {
+			if ct.Status == model.CourtPlaying {
+				n++
+			}
+		}
+	}
+	return n
+}
+
 // attachOrgAvatars denormalizes each session's 團主 avatar onto its summary for
 // display, fetching each distinct org just once (lobby lists span many orgs).
 func attachOrgAvatars(ctx context.Context, out []model.SessionSummary) {
@@ -541,7 +556,11 @@ func ListMySessions(c *gin.Context) {
 			continue // 團主已從清單移除
 		}
 		service.AutoCloseIfExpired(c.Request.Context(), &s) // 過期的標成已結束
-		out = append(out, toSummary(s))
+		sum := toSummary(s)
+		if s.Status == model.SessionOpen { // 進行中的團才算正在開打的球場
+			sum.PlayingCourts = playingCourtCount(c.Request.Context(), s.SessionID)
+		}
+		out = append(out, sum)
 	}
 	attachOrgAvatars(c.Request.Context(), out)
 	ok(c, out)
