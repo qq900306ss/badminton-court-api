@@ -426,7 +426,7 @@ func nonEmptyIDs(p []string) []string {
 // Everyone who was playing gets credited one game.
 // EndVoteThreshold is how many on-court players must vote before a game
 // auto-ends (so players can end a finished game without bugging the leader).
-const EndVoteThreshold = 3
+const EndVoteThreshold = 2
 
 // votesStillPlaying keeps only the votes cast by players who are currently on
 // the court (a voter who left / got moved no longer counts).
